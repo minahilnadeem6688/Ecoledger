@@ -1,0 +1,38 @@
+{
+  "name": "ecoledger",
+  "version": "1.0.0",
+  "description": "EcoLedger API: verified eco-actions rewarded with Campus Carbon Tokens (CCT)",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "chain": "hardhat node",
+    "compile": "hardhat compile",
+    "deploy": "hardhat run scripts/deploy.js --network localhost",
+    "deploy:sepolia": "hardhat run scripts/deploy.js --network sepolia",
+    "test": "hardhat test",
+    "smoke": "node scripts/smoke-test.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@openzeppelin/contracts": "^5.1.0",
+    "bcryptjs": "^3.0.3",
+    "cors": "^2.8.6",
+    "dotenv": "^17.3.1",
+    "ethers": "^6.16.0",
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
+    "mongoose": "^9.2.4",
+    "multer": "^2.1.1"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^6.1.2",
+    "@types/node": "^22.19.17",
+    "hardhat": "^2.28.6",
+    "typescript": "~5.8.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
