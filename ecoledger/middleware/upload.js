@@ -1,27 +1,23 @@
-const multer = require("multer");
+const fs = require('fs');
+const path = require('path');
+const multer = require('multer');
+
+const dir = path.join(__dirname, '..', 'uploads');
+fs.mkdirSync(dir, { recursive: true });
 
 const storage = multer.diskStorage({
-
-  destination: function (req, file, cb) {
-    cb(null, "uploads/");
+  destination: (_req, _file, cb) => cb(null, dir),
+  filename: (_req, file, cb) => {
+    const ext = path.extname(file.originalname || '').toLowerCase().replace(/[^.a-z0-9]/g, '') || '.jpg';
+    cb(null, `${Date.now()}-${Math.round(Math.random() * 1e6)}${ext}`);
   },
-
-  filename: function (req, file, cb) {
-    cb(null, Date.now() + "-" + file.originalname);
-  }
-
 });
 
-const upload = multer({
-  storage: storage,
-  fileFilter: (req, file, cb) => {
-    if (file.mimetype.startsWith("image/")) {
-      cb(null, true);
-    } else {
-      cb(new Error("Only images allowed"), false);
-    }
-  }
+module.exports = multer({
+  storage,
+  limits: { fileSize: 8 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) cb(null, true);
+    else cb(new Error('Proof must be an image.'));
+  },
 });
-//const upload = multer({ storage: storage });
-
-module.exports = upload;

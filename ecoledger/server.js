@@ -1,33 +1,49 @@
-require("dotenv").config();
+/**
+ * EcoLedger API
+ *   npm run chain    →  local blockchain (terminal 1)
+ *   npm run deploy   →  deploy the CCT token (terminal 2, once per chain start)
+ *   npm start        →  this server on http://localhost:5000 (terminal 3)
+ */
+require('dotenv').config();
+const path = require('path');
+const express = require('express');
+const cors = require('cors');
+const mongoose = require('mongoose');
 
-const express = require("express");
-const cors = require("cors");
-
-const connectDB = require("./config/db");
-
-const activityTypeRoutes = require("./routes/activityTypeRoutes");
-const studentRoutes = require("./routes/studentRoutes");
-const activityRoutes = require("./routes/activityRoutes");
-const rewardRoutes = require("./routes/rewardRoutes");
+const connectDB = require('./config/db');
+const seed = require('./config/seed');
+const blockchain = require('./config/blockchain');
 
 const app = express();
-
-connectDB();   // THIS LINE IS VERY IMPORTANT
-
 app.use(cors());
 app.use(express.json());
-app.use("/uploads", express.static("uploads"));
-app.use("/api/rewards", rewardRoutes);
-app.use("/api/activity-types", activityTypeRoutes);
-app.use("/api/students", studentRoutes);
-app.use("/api/activity", activityRoutes);
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-app.get("/", (req, res) => {
-  res.send("EcoLedger server running");
+app.use('/api/students', require('./routes/studentRoutes'));
+app.use('/api/activity', require('./routes/activityRoutes'));
+app.use('/api/activity-types', require('./routes/activityTypeRoutes'));
+app.use('/api/rewards', require('./routes/rewardRoutes'));
+
+// GET /api/health: what the app shows in its status bar
+app.get('/api/health', async (_req, res) => {
+  res.json({
+    server: true,
+    database: mongoose.connection.readyState === 1,
+    chain: await blockchain.status(),
+  });
 });
 
-const PORT = 5000;
+app.get('/', (_req, res) => res.send('EcoLedger API is running. See /api/health.'));
 
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+const PORT = Number(process.env.PORT) || 5000;
+
+connectDB()
+  .then(seed)
+  .catch((err) => console.error('MongoDB connection failed:', err.message))
+  .finally(async () => {
+    app.listen(PORT, '0.0.0.0', () => console.log(`EcoLedger API on http://localhost:${PORT}`));
+    const chain = await blockchain.status();
+    console.log(chain.contract ? `Blockchain ready: CCT at ${chain.address}` : `Blockchain not ready: ${chain.reason}`);
+  });
+
+module.exports = app;

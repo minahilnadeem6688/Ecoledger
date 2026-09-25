@@ -1,16 +1,9 @@
-const mongoose = require("mongoose");
+const mongoose = require('mongoose');
 
-const connectDB = async () => {
-  try {
-    console.log("Connecting to MongoDB...");
-
-    await mongoose.connect(process.env.MONGO_URI);
-
-    console.log("MongoDB Connected");
-  } catch (error) {
-    console.error("MongoDB connection failed:");
-    console.error(error);
-  }
-};
+async function connectDB() {
+  const uri = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/ecoledger';
+  await mongoose.connect(uri);
+  console.log('MongoDB connected');
+}
 
 module.exports = connectDB;

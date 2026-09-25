@@ -1,458 +1,191 @@
 /**
- * EcoLedger — Submit Activity  (FIXED)
- * Location: ecoledger-app/app/submit-activity.tsx
- *
- * Fix: wallet gate — if student hasn't connected a wallet, show a blocker
- * screen that directs them to the Wallet page first.
- * Points can only be credited and tokens minted if a wallet address exists.
+ * Log an eco-action. Points come from the activity type on the server, so the
+ * student only picks a type, describes it and attaches a photo.
+ * If the server can't be reached, the activity is saved on the device and sent later.
  */
-import React, { useState, useRef, useEffect, useCallback } from 'react';
-import {
-  View, Text, TextInput, TouchableOpacity, StyleSheet,
-  ScrollView, Animated, StatusBar, Alert, ActivityIndicator,
-  Modal, FlatList,
-} from 'react-native';
-import { useRouter, useFocusEffect } from 'expo-router';
+import React, { useState } from 'react';
+import { Image, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import Header from '../components/Header';
-import Footer from '../components/Footer';
-import { addActivity, ACTIVITY_POINTS, ACTIVITY_ICONS, hasWalletConnected } from '../store';
+import { C, font, R, S } from '@/constants/theme';
+import { api, ActivityType, ApiError } from '@/lib/api';
+import { buildForm, queueDraft } from '@/lib/queue';
+import { useSession } from '@/lib/session';
+import { useLoad } from '@/lib/useLoad';
+import { Button, Card, Field, IconName, Loading, Notice, PageTitle, Screen, SectionTitle, t, useLayout } from '@/components/ui';
 
-const C = {
-  bg: '#FFDBE5', rose: '#E27396', amaranth: '#EA9AB2',
-  green: '#6D9F71', dark: '#337357', white: '#FFFFFF',
-  txt: '#2D2D2D', grey: '#7A7A7A', lightGreen: '#EAF4EC',
-  border: '#E0E0E0', err: '#D32F2F', errBg: '#FFEBEE', ph: '#B0B0B0',
-};
-const TYPES = Object.keys(ACTIVITY_POINTS);
+const STEPS = [
+  'Pick the activity and describe what you did.',
+  'Attach a clear photo as proof.',
+  'An admin reviews it, usually within a day.',
+  'Once approved, the points are added and the same number of CCT is minted to your wallet.',
+];
 
 export default function SubmitActivity() {
   const router = useRouter();
+  const { toast, refreshUser, refreshQueue } = useSession();
+  const { isDesktop, cols } = useLayout();
+  const types = useLoad(() => api.activityTypes());
+  const [type, setType] = useState<ActivityType | null>(null);
+  const [description, setDescription] = useState('');
+  const [location, setLocation] = useState('');
+  const [image, setImage] = useState<string | null>(null);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [formError, setFormError] = useState('');
+  const [sending, setSending] = useState(false);
 
-  // Wallet gate
-  const [walletChecked, setWalletChecked] = useState(false);
-  const [walletOk, setWalletOk] = useState(false);
-
-  // Form state
-  const [type, setType] = useState('');
-  const [desc, setDesc] = useState('');
-  const [loc, setLoc] = useState('');
-  const [img, setImg] = useState<string | null>(null);
-  const [typeErr, setTypeErr] = useState('');
-  const [descErr, setDescErr] = useState('');
-  const [locErr, setLocErr] = useState('');
-  const [focused, setFocused] = useState<string | null>(null);
-  const [showDrop, setShowDrop] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [done, setDone] = useState(false);
-
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const successScale = useRef(new Animated.Value(0)).current;
-
-  // ── Check wallet on every focus ─────────────────────────────────────────────
-  useFocusEffect(useCallback(() => {
-    (async () => {
-      const ok = await hasWalletConnected();
-      setWalletOk(ok);
-      setWalletChecked(true);
-    })();
-  }, []));
-
-  useEffect(() => {
-    if (walletOk) {
-      Animated.spring(fadeAnim, { toValue: 1, useNativeDriver: true, tension: 55, friction: 9 }).start();
+  const pick = async (camera: boolean) => {
+    const perm = camera ? await ImagePicker.requestCameraPermissionsAsync() : await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted && Platform.OS !== 'web') {
+      setFormError(camera ? 'Camera access is needed to take a photo.' : 'Photo access is needed to attach proof.');
+      return;
     }
-  }, [walletOk]);
-
-  const fu = (a: Animated.Value) => ({
-    opacity: a,
-    transform: [{ translateY: a.interpolate({ inputRange: [0, 1], outputRange: [20, 0] }) }],
-  });
-  const iBox = (f: string, err: boolean) => [
-    s.inputBox,
-    focused === f && !err && s.inputFocused,
-    err && s.inputError,
-  ];
-
-  const pickImage = async () => {
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') { Alert.alert('Permission needed', 'Allow photo access to upload proof.'); return; }
-    const r = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, aspect: [4, 3], quality: 0.8 });
-    if (!r.canceled) setImg(r.assets[0].uri);
+    const opts: ImagePicker.ImagePickerOptions = { mediaTypes: ['images'], allowsEditing: true, aspect: [4, 3], quality: 0.7 };
+    const r = camera ? await ImagePicker.launchCameraAsync(opts) : await ImagePicker.launchImageLibraryAsync(opts);
+    if (!r.canceled && r.assets[0]) { setImage(r.assets[0].uri); setErrors((e) => ({ ...e, image: '' })); }
   };
 
-  const takePhoto = async () => {
-    const { status } = await ImagePicker.requestCameraPermissionsAsync();
-    if (status !== 'granted') { Alert.alert('Permission needed', 'Allow camera access.'); return; }
-    const r = await ImagePicker.launchCameraAsync({ allowsEditing: true, aspect: [4, 3], quality: 0.8 });
-    if (!r.canceled) setImg(r.assets[0].uri);
+  const validate = () => {
+    const e: Record<string, string> = {};
+    if (!type) e.type = 'Choose what kind of activity this was.';
+    if (description.trim().length < 5) e.description = 'Add a sentence about what you did.';
+    if (!image) e.image = 'A photo is needed so the admin can verify it.';
+    setErrors(e);
+    return Object.keys(e).length === 0;
   };
 
-  const handleSubmit = async () => {
-    setTypeErr(''); setDescErr(''); setLocErr('');
-    let ok = true;
-    if (!type) { setTypeErr('Select an activity type'); ok = false; }
-    if (!desc.trim()) { setDescErr('Describe your activity'); ok = false; }
-    else if (desc.trim().length < 10) { setDescErr('Min 10 characters'); ok = false; }
-    if (!loc.trim()) { setLocErr('Enter a location'); ok = false; }
-    if (!ok) return;
-    setLoading(true);
-    await new Promise(r => setTimeout(r, 1200));
-    await addActivity({ type, description: desc.trim(), location: loc.trim(), imageUri: img ?? undefined });
-    setLoading(false);
-    setDone(true);
-    Animated.spring(successScale, { toValue: 1, useNativeDriver: true, tension: 50, friction: 7 }).start();
+  const reset = () => { setType(null); setDescription(''); setLocation(''); setImage(null); setErrors({}); };
+
+  const submit = async () => {
+    setFormError('');
+    if (!validate() || !type) return;
+    setSending(true);
+    const draft = { activityType: type._id, description: description.trim(), location: location.trim(), imageUri: image };
+    try {
+      await api.submitActivity(await buildForm(draft));
+      toast('Activity sent for review.', 'good');
+      reset();
+      refreshUser();
+      router.push('/activities');
+    } catch (e) {
+      if (e instanceof ApiError && e.offline) {
+        await queueDraft({ ...draft, typeName: type.name, savedAt: new Date().toISOString() });
+        await refreshQueue();
+        toast('Server offline. Saved on this device and will send automatically.', 'info');
+        reset();
+        router.push('/');
+      } else {
+        setFormError(e instanceof Error ? e.message : 'Could not submit the activity.');
+      }
+    } finally {
+      setSending(false);
+    }
   };
 
-  const pts = ACTIVITY_POINTS[type] ?? 0;
+  const form = (
+    <Card style={{ gap: S.xl }}>
+      <View style={{ gap: S.md }}>
+        <Text style={s.label}>Activity type</Text>
+        {types.loading ? <Loading /> : types.error ? <Notice tone="red">{types.error}</Notice> : (
+          <View style={s.chips}>
+            {(types.data || []).map((ty) => {
+              const on = type?._id === ty._id;
+              return (
+                <Pressable
+                  key={ty._id}
+                  onPress={() => { setType(ty); setErrors((e) => ({ ...e, type: '' })); }}
+                  style={({ hovered }: any) => [s.chip, { flexBasis: `${100 / cols(2, 3, 3) - 2}%` as any }, on && s.chipOn, hovered && !on && { borderColor: C.pink }]}
+                  accessibilityRole="radio"
+                  accessibilityState={{ checked: on }}
+                >
+                  <Ionicons name={(ty.icon || 'leaf-outline') as IconName} size={20} color={on ? '#fff' : C.green} />
+                  <Text style={[s.chipName, on && { color: '#fff' }]} numberOfLines={2}>{ty.name}</Text>
+                  <Text style={[s.chipPts, on && { color: C.blush }]}>+{ty.points} pts</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        )}
+        {errors.type ? <Text style={s.error}>{errors.type}</Text> : null}
+      </View>
 
-  // ── Loading / checking wallet ──────────────────────────────────────────────
-  if (!walletChecked) {
-    return (
-      <View style={s.root}>
-        <StatusBar barStyle="light-content" backgroundColor="#1A1A1A" />
-        <Header />
-        <View style={s.centerWrap}>
-          <ActivityIndicator size="large" color={C.dark} />
+      <Field label="What did you do?" value={description} onChangeText={(v) => { setDescription(v); if (errors.description) setErrors((e) => ({ ...e, description: '' })); }} placeholder="e.g. Planted six saplings along the hostel boundary with the green society." multiline error={errors.description} />
+      <Field label="Where? (optional)" value={location} onChangeText={setLocation} placeholder="e.g. North lawn, main campus" />
+
+      <View style={{ gap: S.md }}>
+        <Text style={s.label}>Photo proof</Text>
+        {image ? (
+          <View style={s.preview}>
+            <Image source={{ uri: image }} style={s.previewImg} resizeMode="cover" />
+            <Pressable onPress={() => setImage(null)} style={s.remove} accessibilityLabel="Remove photo">
+              <Ionicons name="close" size={18} color="#fff" />
+            </Pressable>
+          </View>
+        ) : (
+          <Pressable onPress={() => pick(false)} style={({ hovered }: any) => [s.drop, !!errors.image && { borderColor: C.red }, hovered && { backgroundColor: C.roseTint }]}>
+            <Ionicons name="image-outline" size={28} color={C.rose} />
+            <Text style={t.h3}>Choose a photo</Text>
+            <Text style={t.small}>JPG or PNG, up to 8 MB</Text>
+          </Pressable>
+        )}
+        <View style={{ flexDirection: 'row', gap: S.sm, flexWrap: 'wrap' }}>
+          {image ? <Button small kind="ghost" icon="images-outline" label="Choose another" onPress={() => pick(false)} /> : null}
+          {Platform.OS !== 'web' ? <Button small kind="ghost" icon="camera-outline" label="Take a photo" onPress={() => pick(true)} /> : null}
         </View>
+        {errors.image ? <Text style={s.error}>{errors.image}</Text> : null}
       </View>
-    );
-  }
 
-  // ── WALLET GATE — student hasn't connected a wallet yet ────────────────────
-  if (!walletOk) {
-    return (
-      <View style={s.root}>
-        <StatusBar barStyle="light-content" backgroundColor="#1A1A1A" />
-        <Header />
-        <ScrollView showsVerticalScrollIndicator={false}>
-          <View style={s.gateWrap}>
-            <View style={s.gateCard}>
-              <Text style={s.gateIcon}>🔗</Text>
-              <Text style={s.gateTitle}>Connect Your Wallet First</Text>
-              <Text style={s.gateDesc}>
-                You need to connect an Ethereum wallet before submitting activities.
-              </Text>
-              <Text style={s.gateDesc}>
-                When an admin approves your activity, EcoPoints and CCT tokens are sent directly to your wallet. Without a connected wallet, we have nowhere to send them.
-              </Text>
+      {formError ? <Notice tone="red" icon="alert-circle">{formError}</Notice> : null}
+      <Button full label={type ? `Submit for review · +${type.points} pts` : 'Submit for review'} icon="paper-plane-outline" onPress={submit} loading={sending} />
+    </Card>
+  );
 
-              <View style={s.gateSteps}>
-                <Text style={s.gateStepTitle}>What you need to do:</Text>
-                <Text style={s.gateStep}>1. Go to the Wallet page</Text>
-                <Text style={s.gateStep}>2. Tap "Connect My Wallet"</Text>
-                <Text style={s.gateStep}>3. Paste your Ethereum address (0x...)</Text>
-                <Text style={s.gateStep}>4. Come back and submit your activity</Text>
-              </View>
-
-              <TouchableOpacity
-                style={s.gateBtn}
-                onPress={() => router.push('/wallet' as any)}
-                activeOpacity={0.85}>
-                <Text style={s.gateBtnTxt}>🔗 Go to Wallet Page</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={s.gateBackBtn}
-                onPress={() => router.back()}
-                activeOpacity={0.8}>
-                <Text style={s.gateBackTxt}>← Go Back</Text>
-              </TouchableOpacity>
-            </View>
+  const aside = (
+    <Card style={{ gap: S.lg, backgroundColor: C.greenTint, borderColor: '#D3E6D6' }}>
+      <SectionTitle>How it works</SectionTitle>
+      <View style={{ gap: S.md, marginTop: S.sm }}>
+        {STEPS.map((step, i) => (
+          <View key={i} style={{ flexDirection: 'row', gap: S.md }}>
+            <View style={s.stepNum}><Text style={s.stepNumText}>{i + 1}</Text></View>
+            <Text style={[t.body, { flex: 1 }]}>{step}</Text>
           </View>
-          <Footer />
-        </ScrollView>
+        ))}
       </View>
-    );
-  }
+      <Notice tone="green" icon="cloud-offline-outline">No connection? Your activity is kept on this device and sent when the server is back.</Notice>
+    </Card>
+  );
 
-  // ── SUCCESS screen ─────────────────────────────────────────────────────────
-  if (done) {
-    return (
-      <View style={s.root}>
-        <StatusBar barStyle="light-content" backgroundColor="#1A1A1A" />
-        <Header />
-        <ScrollView showsVerticalScrollIndicator={false}>
-          <View style={s.successWrap}>
-            <Animated.View style={[s.successCard, { transform: [{ scale: successScale }] }]}>
-              <Text style={{ fontSize: 52, marginBottom: 12, textAlign: 'center' }}>🎉</Text>
-              <Text style={s.successTitle}>Submitted!</Text>
-              <Text style={s.successDesc}>
-                Your <Text style={{ fontWeight: '700', color: C.dark }}>{type}</Text> activity is pending admin verification.
-              </Text>
-              <View style={s.ptsBadge}>
-                <Text style={s.ptsBadgeLabel}>You'll earn</Text>
-                <Text style={s.ptsBadgeNum}>+{pts} pts</Text>
-                <Text style={s.ptsBadgeLabel}>once approved</Text>
-              </View>
-              <View style={s.chainNote}>
-                <Text>🔗 </Text>
-                <Text style={s.chainTxt}>Points and CCT tokens will be sent to your connected wallet after approval.</Text>
-              </View>
-              <TouchableOpacity style={s.btn} onPress={() => router.replace('/(tabs)')} activeOpacity={0.85}>
-                <Text style={s.btnTxt}>Back to Dashboard</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[s.btn, { backgroundColor: C.white, marginTop: 10, borderWidth: 1, borderColor: C.dark }]}
-                onPress={() => {
-                  setDone(false); setType(''); setDesc(''); setLoc(''); setImg(null);
-                  successScale.setValue(0);
-                  fadeAnim.setValue(0);
-                  Animated.spring(fadeAnim, { toValue: 1, useNativeDriver: true, tension: 55, friction: 9 }).start();
-                }}
-                activeOpacity={0.85}>
-                <Text style={[s.btnTxt, { color: C.dark }]}>Submit Another</Text>
-              </TouchableOpacity>
-            </Animated.View>
-          </View>
-          <Footer />
-        </ScrollView>
-      </View>
-    );
-  }
-
-  // ── MAIN FORM ──────────────────────────────────────────────────────────────
   return (
-    <View style={s.root}>
-      <StatusBar barStyle="light-content" backgroundColor="#1A1A1A" />
-      <Header />
-
-      <Modal visible={showDrop} transparent animationType="fade">
-        <TouchableOpacity style={s.overlay} activeOpacity={1} onPress={() => setShowDrop(false)}>
-          <View style={s.dropModal}>
-            <Text style={s.dropTitle}>Select Activity Type</Text>
-            <FlatList
-              data={TYPES}
-              keyExtractor={t => t}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={[s.dropItem, type === item && s.dropItemActive]}
-                  onPress={() => { setType(item); setTypeErr(''); setShowDrop(false); }}>
-                  <Text style={{ fontSize: 20, marginRight: 12 }}>{ACTIVITY_ICONS[item]}</Text>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[s.dropLabel, type === item && { color: C.dark }]}>{item}</Text>
-                    <Text style={s.dropPts}>+{ACTIVITY_POINTS[item]} pts on approval</Text>
-                  </View>
-                  {type === item && <Text style={{ color: C.dark, fontSize: 16 }}>✓</Text>}
-                </TouchableOpacity>
-              )}
-            />
-          </View>
-        </TouchableOpacity>
-      </Modal>
-
-      <ScrollView
-        contentContainerStyle={s.scroll}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled">
-
-        <View style={s.titleBar}>
-          <Text style={s.pageTitle}>Submit Activity</Text>
-          <Text style={s.pageSub}>Log your eco-friendly action</Text>
+    <Screen role="student" maxWidth={1040}>
+      <PageTitle title="Log an activity" subtitle="Tell us what you did for the planet today." />
+      {isDesktop ? (
+        <View style={{ flexDirection: 'row', gap: S.xl, alignItems: 'flex-start' }}>
+          <View style={{ flex: 1.6 }}>{form}</View>
+          <View style={{ flex: 1 }}>{aside}</View>
         </View>
-
-        {/* Wallet connected badge */}
-        <View style={s.walletBadge}>
-          <Text style={s.walletBadgeTxt}>✅ Wallet connected — points will be credited on approval</Text>
-        </View>
-
-        <Animated.View style={[s.card, fu(fadeAnim)]}>
-          {!!type && (
-            <View style={s.ptsBadgeTop}>
-              <Text style={{ fontSize: 16, marginRight: 8 }}>{ACTIVITY_ICONS[type]}</Text>
-              <Text style={{ flex: 1, fontSize: 13, color: C.dark }}>
-                <Text style={{ fontWeight: '700' }}>{type}</Text> — earn{' '}
-                <Text style={{ fontWeight: '800' }}>+{pts} pts</Text> on approval
-              </Text>
-            </View>
-          )}
-
-          <Text style={s.label}>Activity Type *</Text>
-          <TouchableOpacity
-            style={[s.dropdown, !!typeErr && s.inputError]}
-            onPress={() => setShowDrop(true)}
-            activeOpacity={0.8}>
-            <Text style={[s.dropValue, !type && { color: C.ph }]}>
-              {type ? `${ACTIVITY_ICONS[type]}  ${type}` : 'Select Activity Type'}
-            </Text>
-            <Text style={{ color: C.grey }}>▾</Text>
-          </TouchableOpacity>
-          {!!typeErr && <Text style={s.err}>⚠ {typeErr}</Text>}
-
-          <Text style={s.label}>Description *</Text>
-          <View style={iBox('desc', !!descErr)}>
-            <TextInput
-              style={s.textarea}
-              placeholder="Describe your activity in detail..."
-              placeholderTextColor={C.ph}
-              value={desc}
-              onChangeText={t => { setDesc(t); setDescErr(''); }}
-              onFocus={() => setFocused('desc')}
-              onBlur={() => setFocused(null)}
-              multiline numberOfLines={4} textAlignVertical="top"
-            />
-          </View>
-          {!!descErr && <Text style={s.err}>⚠ {descErr}</Text>}
-
-          <Text style={s.label}>Location *</Text>
-          <View style={iBox('loc', !!locErr)}>
-            <TextInput
-              style={s.input}
-              placeholder="e.g. Campus Block C, Community Park"
-              placeholderTextColor={C.ph}
-              value={loc}
-              onChangeText={t => { setLoc(t); setLocErr(''); }}
-              onFocus={() => setFocused('loc')}
-              onBlur={() => setFocused(null)}
-            />
-          </View>
-          {!!locErr && <Text style={s.err}>⚠ {locErr}</Text>}
-
-          <Text style={s.label}>Proof Image (optional)</Text>
-          <TouchableOpacity
-            style={[s.uploadBox, !!img && s.uploadFilled]}
-            onPress={() => Alert.alert('Upload Proof', '', [
-              { text: '📷 Camera', onPress: takePhoto },
-              { text: '🖼️ Gallery', onPress: pickImage },
-              { text: 'Cancel', style: 'cancel' },
-            ])}
-            activeOpacity={0.8}>
-            {img
-              ? <><Text style={{ fontSize: 28, marginBottom: 4 }}>✅</Text><Text style={s.uploadTxt}>Image attached</Text><Text style={s.uploadSub}>Tap to change</Text></>
-              : <><Text style={{ fontSize: 28, marginBottom: 6 }}>📷</Text><Text style={s.uploadTxt}>Tap to upload image</Text><Text style={s.uploadSub}>Photo proof speeds up verification</Text></>
-            }
-          </TouchableOpacity>
-
-          <Text style={s.verifyNote}>🔍 Activities are verified by admins before rewards are issued</Text>
-
-          <TouchableOpacity
-            style={[s.btn, loading && { opacity: 0.75 }]}
-            onPress={handleSubmit}
-            activeOpacity={0.85}
-            disabled={loading}>
-            {loading
-              ? <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                  <ActivityIndicator color={C.white} style={{ marginRight: 10 }} />
-                  <Text style={s.btnTxt}>Submitting to blockchain...</Text>
-                </View>
-              : <Text style={s.btnTxt}>Submit Activity</Text>
-            }
-          </TouchableOpacity>
-        </Animated.View>
-
-        <Footer />
-      </ScrollView>
-    </View>
+      ) : (
+        <>
+          {form}
+          {aside}
+        </>
+      )}
+    </Screen>
   );
 }
 
 const s = StyleSheet.create({
-  root: { flex: 1, backgroundColor: C.bg },
-  scroll: {},
-  centerWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingTop: 80 },
-
-  // Wallet gate
-  gateWrap: { padding: 24, alignItems: 'center' },
-  gateCard: {
-    backgroundColor: C.white, borderRadius: 24, padding: 28, width: '100%',
-    alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08, shadowRadius: 16, elevation: 5,
-  },
-  gateIcon: { fontSize: 52, marginBottom: 14 },
-  gateTitle: { fontSize: 22, fontWeight: '800', color: C.dark, marginBottom: 12, textAlign: 'center' },
-  gateDesc: { fontSize: 14, color: C.grey, textAlign: 'center', lineHeight: 22, marginBottom: 10 },
-  gateSteps: {
-    backgroundColor: C.lightGreen, borderRadius: 14, padding: 16,
-    width: '100%', marginVertical: 16, borderLeftWidth: 3, borderLeftColor: C.green,
-  },
-  gateStepTitle: { fontSize: 13, fontWeight: '700', color: C.dark, marginBottom: 8 },
-  gateStep: { fontSize: 13, color: C.dark, lineHeight: 24 },
-  gateBtn: {
-    backgroundColor: C.dark, borderRadius: 14, paddingVertical: 16,
-    paddingHorizontal: 32, alignItems: 'center', width: '100%', marginBottom: 12,
-    shadowColor: C.dark, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 10, elevation: 5,
-  },
-  gateBtnTxt: { color: C.white, fontSize: 16, fontWeight: '700' },
-  gateBackBtn: { paddingVertical: 12 },
-  gateBackTxt: { fontSize: 14, color: C.grey, fontWeight: '600' },
-
-  // Wallet badge (shown when wallet IS connected)
-  walletBadge: {
-    marginHorizontal: 20, marginBottom: 8, backgroundColor: '#E8F5E9',
-    borderRadius: 10, paddingVertical: 10, paddingHorizontal: 14,
-    borderLeftWidth: 3, borderLeftColor: C.green,
-  },
-  walletBadgeTxt: { fontSize: 13, color: C.dark, fontWeight: '600' },
-
-  // Form
-  titleBar: { paddingHorizontal: 20, paddingVertical: 20 },
-  pageTitle: { fontSize: 26, fontWeight: '800', color: C.dark },
-  pageSub: { fontSize: 14, color: C.grey, marginTop: 3 },
-  card: {
-    marginHorizontal: 20, marginBottom: 28, backgroundColor: C.white,
-    borderRadius: 24, padding: 24, shadowColor: C.rose,
-    shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.1, shadowRadius: 20, elevation: 6,
-  },
-  ptsBadgeTop: {
-    flexDirection: 'row', alignItems: 'center', backgroundColor: C.lightGreen,
-    borderRadius: 12, padding: 12, marginBottom: 18, borderLeftWidth: 3, borderLeftColor: C.green,
-  },
-  label: { fontSize: 13, fontWeight: '600', color: C.dark, marginBottom: 8, marginTop: 6 },
-  dropdown: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    borderWidth: 1.5, borderColor: C.border, borderRadius: 12, backgroundColor: '#FAFAFA',
-    paddingHorizontal: 16, height: 52, marginBottom: 6,
-  },
-  dropValue: { fontSize: 15, color: C.txt, flex: 1 },
-  inputBox: { borderWidth: 1.5, borderColor: C.border, borderRadius: 12, backgroundColor: '#FAFAFA', marginBottom: 6 },
-  inputFocused: { borderColor: C.green, backgroundColor: C.white },
-  inputError: { borderColor: C.err, backgroundColor: C.errBg },
-  input: { height: 50, paddingHorizontal: 16, fontSize: 15, color: C.txt },
-  textarea: { padding: 14, fontSize: 15, color: C.txt, minHeight: 100 },
-  err: { color: C.err, fontSize: 12, marginBottom: 8, fontWeight: '500' },
-  uploadBox: {
-    borderWidth: 1.5, borderColor: '#C8DDC9', borderRadius: 14, borderStyle: 'dashed',
-    backgroundColor: C.lightGreen, alignItems: 'center', justifyContent: 'center',
-    paddingVertical: 28, marginBottom: 6,
-  },
-  uploadFilled: { backgroundColor: '#EAF6EC', borderColor: C.green, borderStyle: 'solid' },
-  uploadTxt: { fontSize: 15, fontWeight: '600', color: C.dark, marginBottom: 2 },
-  uploadSub: { fontSize: 12, color: C.grey },
-  verifyNote: { fontSize: 12, color: C.grey, textAlign: 'center', marginVertical: 14 },
-  btn: {
-    backgroundColor: C.dark, borderRadius: 12, height: 52, alignItems: 'center',
-    justifyContent: 'center', marginTop: 4, shadowColor: C.dark,
-    shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.28, shadowRadius: 10, elevation: 5,
-  },
-  btnTxt: { color: C.white, fontSize: 16, fontWeight: '700' },
-
-  // Dropdown modal
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'flex-end' },
-  dropModal: { backgroundColor: C.white, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, maxHeight: '70%' },
-  dropTitle: { fontSize: 18, fontWeight: '700', color: C.dark, marginBottom: 16, textAlign: 'center' },
-  dropItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 13, borderBottomWidth: 1, borderBottomColor: '#F0F0F0' },
-  dropItemActive: { backgroundColor: C.lightGreen, borderRadius: 12, paddingHorizontal: 8 },
-  dropLabel: { fontSize: 15, fontWeight: '600', color: C.txt },
-  dropPts: { fontSize: 12, color: C.green, marginTop: 2 },
-
-  // Success screen
-  successWrap: { padding: 24, alignItems: 'center' },
-  successCard: {
-    backgroundColor: C.white, borderRadius: 24, padding: 28, width: '100%',
-    maxWidth: 440, alignItems: 'center', shadowColor: C.green,
-    shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.15, shadowRadius: 20, elevation: 8,
-  },
-  successTitle: { fontSize: 24, fontWeight: '800', color: C.dark, marginBottom: 10 },
-  successDesc: { fontSize: 14, color: C.grey, textAlign: 'center', lineHeight: 21, marginBottom: 20 },
-  ptsBadge: {
-    backgroundColor: C.lightGreen, borderRadius: 14, paddingVertical: 14,
-    paddingHorizontal: 28, alignItems: 'center', marginBottom: 16,
-  },
-  ptsBadgeLabel: { fontSize: 12, color: C.grey },
-  ptsBadgeNum: { fontSize: 36, fontWeight: '800', color: C.dark },
-  chainNote: {
-    flexDirection: 'row', alignItems: 'flex-start', backgroundColor: '#F0F7F2',
-    borderRadius: 12, padding: 12, marginBottom: 16, borderLeftWidth: 3, borderLeftColor: C.green,
-  },
-  chainTxt: { flex: 1, fontSize: 12, color: C.dark, lineHeight: 18 },
+  label: { fontFamily: font, fontSize: 13, fontWeight: '700', color: C.green, letterSpacing: 0.2 },
+  error: { fontFamily: font, fontSize: 13, color: C.red, fontWeight: '600' },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: S.sm },
+  chip: { flexGrow: 1, gap: 6, padding: S.md, borderRadius: R.md, borderWidth: 1.5, borderColor: C.line, backgroundColor: '#FFFBFC' },
+  chipOn: { backgroundColor: C.green, borderColor: C.green },
+  chipName: { fontFamily: font, fontSize: 14.5, fontWeight: '700', color: C.ink },
+  chipPts: { fontFamily: font, fontSize: 13, fontWeight: '700', color: C.rose },
+  drop: { height: 170, borderRadius: R.lg, borderWidth: 1.5, borderStyle: 'dashed', borderColor: C.lineStrong, alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: '#FFFBFC' },
+  preview: { borderRadius: R.lg, overflow: 'hidden', aspectRatio: 4 / 3, maxHeight: 340, backgroundColor: C.blush },
+  previewImg: { width: '100%', height: '100%' },
+  remove: { position: 'absolute', top: 10, right: 10, width: 34, height: 34, borderRadius: 17, backgroundColor: 'rgba(27,43,36,0.6)', alignItems: 'center', justifyContent: 'center' },
+  stepNum: { width: 26, height: 26, borderRadius: 13, backgroundColor: C.green, alignItems: 'center', justifyContent: 'center' },
+  stepNumText: { fontFamily: font, fontSize: 13, fontWeight: '800', color: '#fff' },
 });

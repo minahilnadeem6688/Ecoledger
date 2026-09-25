@@ -1,431 +1,191 @@
 /**
- * EcoLedger — My Wallet
- * Location: ecoledger-app/app/wallet.tsx
- *
- * Flow:
- *  1. Tap "Open MetaMask" → opens MetaMask app via deep link
- *  2. User copies their address from MetaMask
- *  3. User comes back, pastes address → it saves to backend + local
- *  4. On every focus, syncUserFromBackend() pulls live points from MongoDB
- *  5. No mock/hardcoded data — everything is real from backend
+ * Wallet: the student's address, the live on-chain CCT balance read from the
+ * contract, and a receipt for every mint.
  */
-import React, { useState, useCallback } from 'react';
-import {
-  View, Text, ScrollView, TouchableOpacity, StyleSheet,
-  StatusBar, Alert, RefreshControl, Clipboard,
-  TextInput, Modal, Linking,
-} from 'react-native';
-import { useFocusEffect } from 'expo-router';
-import Header from '../components/Header';
-import Footer from '../components/Footer';
-import {
-  syncUserFromBackend, getUser, getActivities,
-  EcoUser, Activity, shortWallet, formatDate,
-  isBackendRunning, connectExternalWallet,
-  disconnectExternalWallet, ACTIVITY_ICONS,
-} from '../store';
-
-const C = {
-  bg: '#FFDBE5', green: '#6D9F71', dark: '#337357',
-  white: '#FFFFFF', txt: '#2D2D2D', grey: '#7A7A7A',
-  lightGreen: '#EAF4EC', rose: '#E27396',
-};
-
-// MetaMask deep link — opens the MetaMask app directly
-const METAMASK_DEEP_LINK = 'metamask://';
+import React, { useState } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import * as Clipboard from 'expo-clipboard';
+import { C, font, mono, R, S } from '@/constants/theme';
+import { api, shortHash, timeAgo } from '@/lib/api';
+import { useSession } from '@/lib/session';
+import { useLoad } from '@/lib/useLoad';
+import { Button, Card, Empty, Field, Grid, Loading, Mono, Notice, PageTitle, Pill, Screen, SectionTitle, Stat, t, useLayout } from '@/components/ui';
 
 export default function Wallet() {
-  const [user, setUser]             = useState<EcoUser | null>(null);
-  const [approvedActs, setApprovedActs] = useState<Activity[]>([]);
-  const [backendOnline, setBackendOnline] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
+  const { toast, setUser } = useSession();
+  const { isTablet, isDesktop, isPhone, cols } = useLayout();
+  const { data: w, loading, error, reload } = useLoad(() => api.wallet());
+  const [editing, setEditing] = useState(false);
+  const [addr, setAddr] = useState('');
+  const [addrError, setAddrError] = useState('');
+  const [saving, setSaving] = useState(false);
 
-  const [showModal, setShowModal]   = useState(false);
-  const [address, setAddress]       = useState('');
-  const [addrError, setAddrError]   = useState('');
-  const [saving, setSaving]         = useState(false);
-
-  // Pull live data from backend on every screen focus
-  const load = useCallback(async () => {
-    const [synced, acts, online] = await Promise.all([
-      syncUserFromBackend(),
-      getActivities(),
-      isBackendRunning(),
-    ]);
-    setUser(synced ?? await getUser());
-    setBackendOnline(online);
-    setApprovedActs(acts.filter(a => a.status === 'Approved'));
-  }, []);
-
-  useFocusEffect(useCallback(() => { load(); }, [load]));
-
-  const walletAddr  = user?.connectedWallet ?? user?.walletAddress ?? null;
-  const isConnected = !!walletAddr && /^0x[0-9a-fA-F]{40}$/.test(walletAddr);
-  const cct         = user?.cctTokens  ?? 0;
-  const pts         = user?.ecoPoints  ?? 0;
-
-  // Open MetaMask app
-  const openMetaMask = async () => {
-    const canOpen = await Linking.canOpenURL(METAMASK_DEEP_LINK);
-    if (canOpen) {
-      await Linking.openURL(METAMASK_DEEP_LINK);
-    } else {
-      // MetaMask not installed — open download page
-      Alert.alert(
-        'MetaMask Not Found',
-        'Install MetaMask first, then come back to connect your wallet.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Download MetaMask', onPress: () => Linking.openURL('https://metamask.io/download/') },
-        ],
-      );
-    }
+  const copy = async (value: string, what: string) => {
+    await Clipboard.setStringAsync(value);
+    toast(`${what} copied.`, 'good');
   };
 
-  const handleSaveAddress = async () => {
+  const connect = async () => {
     setAddrError('');
-    const addr = address.trim();
-    if (!addr) { setAddrError('Paste your wallet address from MetaMask.'); return; }
-    if (!/^0x[0-9a-fA-F]{40}$/.test(addr)) {
-      setAddrError('Invalid address. Must start with 0x and be exactly 42 characters.');
-      return;
-    }
+    if (!/^0x[0-9a-fA-F]{40}$/.test(addr.trim())) { setAddrError('Wallet address must start with 0x and be 42 characters long.'); return; }
     setSaving(true);
-    const result = await connectExternalWallet(addr);
-    setSaving(false);
-    if (!result.success) { setAddrError(result.error ?? 'Failed to save.'); return; }
-    setShowModal(false);
-    setAddress('');
-    await load();
-    Alert.alert('✅ Wallet Connected!',
-      `Address saved: ${addr.slice(0, 10)}...${addr.slice(-4)}\n\n` +
-      `CCT tokens will be minted here when admin approves your activities.`
-    );
+    try {
+      setUser(await api.connectWallet(addr.trim()));
+      toast('Wallet connected. New tokens will be minted to this address.', 'good');
+      setEditing(false);
+      setAddr('');
+      reload();
+    } catch (e) {
+      setAddrError(e instanceof Error ? e.message : 'Could not save the address.');
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleDisconnect = () => {
-    Alert.alert('Disconnect Wallet?', 'Your EcoPoints are preserved.', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Disconnect', style: 'destructive', onPress: async () => {
-        await disconnectExternalWallet(); await load();
-      }},
-    ]);
-  };
+  if (loading) return <Screen role="student"><PageTitle title="Wallet" /><Loading /></Screen>;
 
-  const copyAddr = () => {
-    if (walletAddr) { Clipboard.setString(walletAddr); Alert.alert('Copied!', 'Address copied.'); }
-  };
+  const chainLive = !!w?.chain.contract;
+  const mismatch = w && w.onChainBalance != null && w.onChainBalance < w.recordedTokens;
 
-  // ── Connect Modal ───────────────────────────────────────────────────────────
-  const ConnectModal = () => (
-    <Modal visible={showModal} transparent animationType="slide">
-      <View style={s.overlay}>
-        <View style={s.modalBox}>
-          <Text style={s.modalTitle}>Connect MetaMask Wallet</Text>
-
-          {/* Step 1 — Open MetaMask */}
-          <View style={s.step}>
-            <View style={s.stepNum}><Text style={s.stepNumTxt}>1</Text></View>
-            <View style={{ flex: 1 }}>
-              <Text style={s.stepTitle}>Open MetaMask & copy your address</Text>
-              <Text style={s.stepDesc}>Make sure you are on the Hardhat Local network in MetaMask, then tap your account address to copy it.</Text>
-              <TouchableOpacity style={s.mmBtn} onPress={openMetaMask}>
-                <Text style={s.mmBtnTxt}>🦊 Open MetaMask</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {/* Step 2 — Paste address */}
-          <View style={s.step}>
-            <View style={s.stepNum}><Text style={s.stepNumTxt}>2</Text></View>
-            <View style={{ flex: 1 }}>
-              <Text style={s.stepTitle}>Paste your address below</Text>
-              <TextInput
-                style={[s.input, !!addrError && s.inputErr]}
-                placeholder="0x... (42 characters)"
-                placeholderTextColor="#B0B0B0"
-                value={address}
-                onChangeText={t => { setAddress(t); setAddrError(''); }}
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-              {!!addrError && <Text style={s.errTxt}>⚠ {addrError}</Text>}
-            </View>
-          </View>
-
-          <View style={s.secBox}>
-            <Text style={s.secTxt}>🔒 Only your public address is saved. Your private key never leaves MetaMask.</Text>
-          </View>
-
-          <TouchableOpacity
-            style={[s.saveBtn, saving && { opacity: 0.6 }]}
-            onPress={handleSaveAddress} disabled={saving}>
-            <Text style={s.saveBtnTxt}>{saving ? 'Saving...' : 'Connect Wallet'}</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={s.cancelBtn}
-            onPress={() => { setShowModal(false); setAddress(''); setAddrError(''); }}>
-            <Text style={s.cancelTxt}>Cancel</Text>
-          </TouchableOpacity>
+  const hero = w ? (
+    <View style={[s.hero, { padding: isTablet ? S.xxl : S.xl }]}>
+      <View style={s.heroTop}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: S.sm }}>
+          <Ionicons name="wallet" size={18} color={C.blush} />
+          <Text style={s.heroLabel}>Campus Carbon Token balance</Text>
         </View>
+        <Pill tone={chainLive ? 'green' : 'amber'} icon={chainLive ? 'radio-button-on' : 'warning'} label={chainLive ? 'Read live from chain' : 'Chain offline'} />
       </View>
-    </Modal>
-  );
-
-  // ── Not Connected ───────────────────────────────────────────────────────────
-  const NotConnected = () => (
-    <View style={s.notConnCard}>
-      <Text style={s.ncIcon}>🔗</Text>
-      <Text style={s.ncTitle}>No Wallet Connected</Text>
-      <Text style={s.ncDesc}>
-        Connect your MetaMask wallet to receive CCT tokens when your eco activities are approved.
-      </Text>
-
-      {/* Hardhat network info box */}
-      <View style={s.netBox}>
-        <Text style={s.netTitle}>Add Hardhat Network in MetaMask:</Text>
-        {([
-          ['Network Name', 'Hardhat Local'],
-          ['RPC URL',      'http://127.0.0.1:8545'],
-          ['Chain ID',     '31337'],
-          ['Symbol',       'ETH'],
-        ] as [string, string][]).map(([k, v]) => (
-          <TouchableOpacity key={k} style={s.netRow}
-            onPress={() => { Clipboard.setString(v); Alert.alert('Copied!', `${k}: ${v}`); }}>
-            <Text style={s.netKey}>{k}</Text>
-            <Text style={s.netVal}>{v} 📋</Text>
-          </TouchableOpacity>
-        ))}
-        <Text style={s.netNote}>Tap any value to copy it</Text>
+      <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: S.sm }}>
+        <Text style={[s.heroValue, !isTablet && { fontSize: 44 }]}>{w.onChainBalance ?? '–'}</Text>
+        <Text style={s.heroUnit}>CCT</Text>
       </View>
-
-      {/* Open MetaMask button */}
-      <TouchableOpacity style={s.mmMainBtn} onPress={openMetaMask}>
-        <Text style={s.mmMainBtnTxt}>🦊 Open MetaMask</Text>
-      </TouchableOpacity>
-
-      {/* Connect button */}
-      <TouchableOpacity style={s.connectBtn} onPress={() => setShowModal(true)}>
-        <Text style={s.connectBtnTxt}>🔗 I Have My Address — Connect</Text>
-      </TouchableOpacity>
+      <Pressable onPress={() => copy(w.walletAddress, 'Wallet address')} style={s.addr} accessibilityLabel="Copy wallet address">
+        <Text style={s.addrText} numberOfLines={1}>{isDesktop ? w.walletAddress : shortHash(w.walletAddress, 10, 8)}</Text>
+        <Ionicons name="copy-outline" size={16} color={C.blush} />
+      </Pressable>
     </View>
-  );
+  ) : null;
 
-  // ── Connected ───────────────────────────────────────────────────────────────
-  const Connected = () => (
-    <>
-      {/* Backend status */}
-      <View style={[s.statusBar, { backgroundColor: backendOnline ? '#E8F5E9' : '#FFF8E1' }]}>
-        <View style={[s.dot, { backgroundColor: backendOnline ? C.green : '#F59E0B' }]} />
-        <Text style={[s.statusTxt, { color: backendOnline ? C.dark : '#92400E' }]}>
-          Backend: {backendOnline ? 'Connected ✓' : 'Offline'}
-        </Text>
+  const chain = w ? (
+    <Card style={{ gap: S.md }}>
+      <SectionTitle>Network</SectionTitle>
+      <View style={{ gap: S.sm, marginTop: S.sm }}>
+        <Row label="Status" value={chainLive ? 'Connected' : 'Unavailable'} />
+        <Row label="Token" value={w.chain.symbol ? `${w.chain.symbol} (ERC-20, whole tokens)` : 'CCT'} />
+        <Row label="Chain ID" value={w.chain.chainId ? String(w.chain.chainId) : '–'} />
+        <Row label="Contract" value={w.chain.address ? shortHash(w.chain.address, 8, 6) : 'Not deployed'} mono onCopy={w.chain.address ? () => copy(w.chain.address!, 'Contract address') : undefined} />
       </View>
+      {!chainLive && w.chain.reason ? <Notice tone="amber" icon="warning">{w.chain.reason}</Notice> : null}
+    </Card>
+  ) : null;
 
-      {/* Wallet card — all real data from backend */}
-      <View style={s.card}>
-        <View style={s.cardCircle1} />
-        <View style={s.cardCircle2} />
-
-        <Text style={s.cardLabel}>Connected Wallet</Text>
-        <View style={s.addrRow}>
-          <Text style={s.addrTxt}>{shortWallet(walletAddr ?? '')}</Text>
-          <TouchableOpacity onPress={copyAddr} style={{ marginLeft: 10 }}>
-            <Text style={{ color: 'rgba(255,255,255,0.7)', fontSize: 18 }}>📋</Text>
-          </TouchableOpacity>
-        </View>
-
-        <Text style={s.bigNum}>{cct}</Text>
-        <Text style={s.bigNumLabel}>CCT Tokens</Text>
-        <Text style={s.ptsLabel}>🌿 {pts} EcoPoints</Text>
-
-        <View style={s.connRow}>
-          <View style={s.connDot} />
-          <Text style={s.connTxt}>Wallet connected ✓</Text>
-        </View>
-      </View>
-
-      {/* Buttons */}
-      <View style={s.btnRow}>
-        <TouchableOpacity style={s.refreshBtn} onPress={async () => { const u = await syncUserFromBackend(); if (u) { setUser(u); Alert.alert('Refreshed ✅', `EcoPoints: ${u.ecoPoints}\nCCT: ${u.cctTokens}`); } }}>
-          <Text style={s.refreshTxt}>🔄 Refresh</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={s.changeBtn} onPress={() => setShowModal(true)}>
-          <Text style={s.changeTxt}>⟳ Change</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={s.discBtn} onPress={handleDisconnect}>
-          <Text style={s.discTxt}>✗</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Token details — real data */}
-      <View style={s.detailCard}>
-        <Text style={s.detailTitle}>Token Details</Text>
-        {([
-          ['Token',      'Campus Carbon Token (CCT)'],
-          ['Network',    'Hardhat Local'],
-          ['Standard',   'ERC-20'],
-          ['Wallet',     shortWallet(walletAddr ?? '')],
-          ['CCT Balance',`${cct} CCT`],
-          ['EcoPoints',  `${pts} pts`],
-        ] as [string, string][]).map(([k, v]) => (
-          <View key={k} style={s.detailRow}>
-            <Text style={s.detailKey}>{k}:</Text>
-            <Text style={s.detailVal}>{v}</Text>
+  const own = (
+    <Card style={{ gap: S.md }}>
+      <SectionTitle>Use your own wallet</SectionTitle>
+      <Text style={t.body}>
+        EcoLedger created an address for you. If you have MetaMask or another wallet, paste its address and future tokens will go there.
+      </Text>
+      {editing ? (
+        <View style={{ gap: S.md }}>
+          <Field label="Wallet address" value={addr} onChangeText={setAddr} placeholder="0x…" autoCapitalize="none" error={addrError} style={{ fontFamily: mono, fontSize: 14 }} />
+          <View style={{ flexDirection: 'row', gap: S.sm }}>
+            <Button small label="Save address" icon="checkmark" onPress={connect} loading={saving} />
+            <Button small kind="ghost" label="Cancel" onPress={() => { setEditing(false); setAddrError(''); }} />
           </View>
-        ))}
-      </View>
-
-      {/* How it works */}
-      <View style={s.howBox}>
-        <Text style={s.howTitle}>💡 How Tokens Work</Text>
-        <Text style={s.howTxt}>
-          1. Submit an eco activity{'\n'}
-          2. Admin reviews and taps Approve & Mint{'\n'}
-          3. EcoPoints added to your account in MongoDB{'\n'}
-          4. CCT tokens minted to this wallet on Hardhat{'\n'}
-          5. Redeem points for rewards on the Rewards page
-        </Text>
-      </View>
-
-      {/* Real earning history from backend */}
-      <Text style={s.histTitle}>Earning History</Text>
-      {approvedActs.length === 0 ? (
-        <View style={s.emptyBox}>
-          <Text style={s.emptyTxt}>No approved activities yet</Text>
-          <Text style={s.emptyDesc}>Submit eco activities to earn CCT tokens.</Text>
         </View>
       ) : (
-        <View style={s.histCard}>
-          {approvedActs.map((a, i) => (
-            <View key={a.id} style={[s.histRow, i < approvedActs.length - 1 && s.histBorder]}>
-              <View style={s.histIcon}>
-                <Text style={{ fontSize: 18 }}>{ACTIVITY_ICONS[a.type] ?? '🍃'}</Text>
+        <Button small kind="ghost" icon="link-outline" label="Connect an address" onPress={() => setEditing(true)} />
+      )}
+    </Card>
+  );
+
+  const history = w ? (
+    <Card style={{ gap: S.sm }}>
+      <SectionTitle>Mint receipts</SectionTitle>
+      {w.mints.length === 0 ? (
+        <Text style={[t.body, { marginTop: S.md, color: C.muted }]}>No tokens minted yet. They appear here as soon as an admin approves one of your activities.</Text>
+      ) : (
+        <View style={{ marginTop: S.sm }}>
+          {w.mints.map((m) => (
+            <View key={m._id} style={s.receipt}>
+              <View style={s.receiptIcon}><Ionicons name="cube" size={16} color={C.green} /></View>
+              <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
+                <Text style={t.h3} numberOfLines={1}>{m.activityType?.name || 'Activity'}</Text>
+                <Pressable onPress={() => copy(m.mintTxHash, 'Transaction hash')}>
+                  <Mono style={{ color: C.muted, fontSize: 12.5 }}>tx {shortHash(m.mintTxHash, 10, 6)} · block {m.mintBlock}</Mono>
+                </Pressable>
               </View>
-              <View style={{ flex: 1 }}>
-                <Text style={s.histType}>{a.type}</Text>
-                <Text style={s.histDate}>{formatDate(a.submittedAt)}</Text>
-              </View>
-              <View style={{ alignItems: 'flex-end' }}>
-                <Text style={s.histPts}>+{a.pts} pts</Text>
-                <Text style={s.histMinted}>CCT minted ✓</Text>
+              <View style={{ alignItems: 'flex-end', gap: 3 }}>
+                <Text style={s.plus}>+{m.pointsEarned} CCT</Text>
+                <Text style={t.small}>{timeAgo(m.verifiedAt)}</Text>
               </View>
             </View>
           ))}
         </View>
       )}
-    </>
-  );
+    </Card>
+  ) : null;
 
   return (
-    <View style={s.root}>
-      <StatusBar barStyle="light-content" backgroundColor="#1A1A1A" />
-      <Header />
-      <ConnectModal />
-      <ScrollView showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl refreshing={refreshing}
-            onRefresh={async () => { setRefreshing(true); await load(); setRefreshing(false); }}
-            tintColor={C.dark} />
-        }>
-        <View style={s.titleBar}>
-          <Text style={s.pageTitle}>My Wallet</Text>
-          <Text style={s.pageSub}>Blockchain Overview 🔗</Text>
-        </View>
-        <View style={s.content}>
-          {isConnected ? <Connected /> : <NotConnected />}
-        </View>
-        <Footer />
-      </ScrollView>
+    <Screen role="student">
+      <PageTitle title="Wallet" subtitle="Your tokens live on the blockchain, not just in our database." action={<Button small kind="ghost" icon="refresh" label="Refresh" onPress={reload} />} />
+      {error ? <Notice tone="red" icon="alert-circle">{error}</Notice> : null}
+      {!w ? <Empty icon="wallet-outline" title="Wallet unavailable" body="Check that the server is running and try again." /> : (
+        <>
+          {hero}
+          <Grid cols={cols(1, 3, 3)}>
+            <Stat row={isPhone} label="CCT on-chain" value={w.onChainBalance ?? '–'} icon="cube" tone="green" note={chainLive ? 'Live balanceOf() read' : 'Chain offline'} />
+            <Stat row={isPhone} label="CCT recorded by EcoLedger" value={w.recordedTokens} icon="document-text" tone="sage" note="Total ever minted to you" />
+            <Stat row={isPhone} label="Eco points to spend" value={w.ecoPoints} icon="sparkles" tone="rose" note="Used for rewards" />
+          </Grid>
+          {mismatch ? (
+            <Notice tone="amber" icon="information-circle">
+              The on-chain balance is lower than EcoLedger{"'"}s record. This happens on a local test chain after it restarts, because a fresh chain starts empty. Tokens minted from now on will show up normally.
+            </Notice>
+          ) : null}
+          {isDesktop ? (
+            <View style={{ flexDirection: 'row', gap: S.xl, alignItems: 'flex-start' }}>
+              <View style={{ flex: 1.5 }}>{history}</View>
+              <View style={{ flex: 1, gap: S.xl }}>{chain}{own}</View>
+            </View>
+          ) : (
+            <>
+              {history}
+              {chain}
+              {own}
+            </>
+          )}
+        </>
+      )}
+    </Screen>
+  );
+}
+
+function Row({ label, value, mono: isMono, onCopy }: { label: string; value: string; mono?: boolean; onCopy?: () => void }) {
+  return (
+    <View style={s.row}>
+      <Text style={t.small}>{label}</Text>
+      <Pressable onPress={onCopy} disabled={!onCopy} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 1 }}>
+        {isMono ? <Mono numberOfLines={1}>{value}</Mono> : <Text style={s.rowValue} numberOfLines={1}>{value}</Text>}
+        {onCopy ? <Ionicons name="copy-outline" size={14} color={C.muted} /> : null}
+      </Pressable>
     </View>
   );
 }
 
 const s = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#FFDBE5' },
-  titleBar: { paddingHorizontal: 20, paddingTop: 24, paddingBottom: 8 },
-  pageTitle: { fontSize: 26, fontWeight: '800', color: '#337357' },
-  pageSub: { fontSize: 14, color: '#6D9F71', fontWeight: '500', marginTop: 3 },
-  content: { padding: 20 },
-
-  // Not connected
-  notConnCard: { backgroundColor: '#FFFFFF', borderRadius: 24, padding: 24, alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 16, elevation: 5 },
-  ncIcon: { fontSize: 52, marginBottom: 12 },
-  ncTitle: { fontSize: 22, fontWeight: '800', color: '#337357', marginBottom: 8 },
-  ncDesc: { fontSize: 14, color: '#7A7A7A', textAlign: 'center', lineHeight: 22, marginBottom: 20 },
-  netBox: { backgroundColor: '#EAF4EC', borderRadius: 14, padding: 16, width: '100%', marginBottom: 20, borderLeftWidth: 3, borderLeftColor: '#337357' },
-  netTitle: { fontSize: 13, fontWeight: '700', color: '#337357', marginBottom: 10 },
-  netRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: '#D4EAD8' },
-  netKey: { fontSize: 12, fontWeight: '600', color: '#2D2D2D' },
-  netVal: { fontSize: 12, color: '#337357', fontWeight: '600' },
-  netNote: { fontSize: 11, color: '#7A7A7A', marginTop: 8, textAlign: 'center' },
-  mmMainBtn: { backgroundColor: '#F6851B', borderRadius: 14, paddingVertical: 14, paddingHorizontal: 32, alignItems: 'center', width: '100%', marginBottom: 12 },
-  mmMainBtnTxt: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
-  connectBtn: { backgroundColor: '#337357', borderRadius: 14, paddingVertical: 14, paddingHorizontal: 32, alignItems: 'center', width: '100%' },
-  connectBtnTxt: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
-
-  // Connected
-  statusBar: { flexDirection: 'row', alignItems: 'center', borderRadius: 12, padding: 12, marginBottom: 12 },
-  dot: { width: 8, height: 8, borderRadius: 4, marginRight: 8 },
-  statusTxt: { fontSize: 12, fontWeight: '500', flex: 1 },
-  card: { borderRadius: 20, backgroundColor: '#337357', padding: 24, marginBottom: 14, overflow: 'hidden' },
-  cardCircle1: { position: 'absolute', right: -30, top: -30, width: 160, height: 160, borderRadius: 80, borderWidth: 30, borderColor: 'rgba(255,255,255,0.08)' },
-  cardCircle2: { position: 'absolute', left: -20, bottom: -20, width: 100, height: 100, borderRadius: 50, borderWidth: 20, borderColor: 'rgba(255,255,255,0.05)' },
-  cardLabel: { fontSize: 12, color: 'rgba(255,255,255,0.7)', marginBottom: 4 },
-  addrRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 20 },
-  addrTxt: { fontSize: 18, color: '#FFFFFF', fontWeight: '600' },
-  bigNum: { fontSize: 52, fontWeight: '800', color: '#FFFFFF', textAlign: 'center' },
-  bigNumLabel: { fontSize: 18, color: 'rgba(255,255,255,0.8)', textAlign: 'center', marginTop: 2, marginBottom: 6 },
-  ptsLabel: { fontSize: 14, color: 'rgba(255,255,255,0.7)', textAlign: 'center', marginBottom: 14 },
-  connRow: { flexDirection: 'row', alignItems: 'center' },
-  connDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#6EE7B7', marginRight: 6 },
-  connTxt: { fontSize: 13, color: 'rgba(255,255,255,0.8)', fontWeight: '500' },
-  btnRow: { flexDirection: 'row', gap: 8, marginBottom: 16 },
-  refreshBtn: { flex: 3, backgroundColor: '#6D9F71', borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
-  refreshTxt: { color: '#FFFFFF', fontSize: 13, fontWeight: '700' },
-  changeBtn: { flex: 2, backgroundColor: '#4A7C5C', borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
-  changeTxt: { color: '#FFFFFF', fontSize: 13, fontWeight: '700' },
-  discBtn: { flex: 1, backgroundColor: '#FFEBEE', borderRadius: 12, paddingVertical: 14, alignItems: 'center' },
-  discTxt: { color: '#EF4444', fontSize: 16, fontWeight: '700' },
-  detailCard: { backgroundColor: '#FFFFFF', borderRadius: 18, padding: 20, marginBottom: 14 },
-  detailTitle: { fontSize: 17, fontWeight: '700', color: '#337357', marginBottom: 14 },
-  detailRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 9, borderBottomWidth: 1, borderBottomColor: '#F5F5F5' },
-  detailKey: { fontSize: 14, fontWeight: '600', color: '#2D2D2D' },
-  detailVal: { fontSize: 14, color: '#7A7A7A' },
-  howBox: { backgroundColor: '#EAF4EC', borderRadius: 14, padding: 16, marginBottom: 20, borderLeftWidth: 3, borderLeftColor: '#337357' },
-  howTitle: { fontSize: 14, fontWeight: '700', color: '#337357', marginBottom: 8 },
-  howTxt: { fontSize: 13, color: '#2D2D2D', lineHeight: 22 },
-  histTitle: { fontSize: 17, fontWeight: '700', color: '#2D2D2D', marginBottom: 12 },
-  histCard: { backgroundColor: '#FFFFFF', borderRadius: 18, paddingHorizontal: 16, marginBottom: 20 },
-  histRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14 },
-  histBorder: { borderBottomWidth: 1, borderBottomColor: '#F5F5F5' },
-  histIcon: { width: 38, height: 38, borderRadius: 19, backgroundColor: '#EAF4EC', alignItems: 'center', justifyContent: 'center', marginRight: 12 },
-  histType: { fontSize: 14, fontWeight: '600', color: '#2D2D2D' },
-  histDate: { fontSize: 12, color: '#7A7A7A', marginTop: 2 },
-  histPts: { fontSize: 15, fontWeight: '700', color: '#337357' },
-  histMinted: { fontSize: 11, color: '#6D9F71', marginTop: 2 },
-  emptyBox: { alignItems: 'center', paddingVertical: 30 },
-  emptyTxt: { fontSize: 15, fontWeight: '600', color: '#337357', marginBottom: 6 },
-  emptyDesc: { fontSize: 13, color: '#7A7A7A', textAlign: 'center' },
-
-  // Modal
-  overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' },
-  modalBox: { backgroundColor: '#FFFFFF', borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 24, paddingBottom: 40 },
-  modalTitle: { fontSize: 20, fontWeight: '800', color: '#337357', textAlign: 'center', marginBottom: 20 },
-  step: { flexDirection: 'row', marginBottom: 20, alignItems: 'flex-start' },
-  stepNum: { width: 30, height: 30, borderRadius: 15, backgroundColor: '#337357', alignItems: 'center', justifyContent: 'center', marginRight: 12, flexShrink: 0 },
-  stepNumTxt: { color: '#FFFFFF', fontSize: 14, fontWeight: '800' },
-  stepTitle: { fontSize: 14, fontWeight: '700', color: '#2D2D2D', marginBottom: 4 },
-  stepDesc: { fontSize: 13, color: '#7A7A7A', lineHeight: 20, marginBottom: 10 },
-  mmBtn: { backgroundColor: '#F6851B', borderRadius: 12, paddingVertical: 12, paddingHorizontal: 20, alignSelf: 'flex-start' },
-  mmBtnTxt: { color: '#FFFFFF', fontSize: 14, fontWeight: '700' },
-  input: { borderWidth: 1.5, borderColor: '#E0E0E0', borderRadius: 12, backgroundColor: '#FAFAFA', height: 50, paddingHorizontal: 14, fontSize: 14, color: '#2D2D2D', marginTop: 8 },
-  inputErr: { borderColor: '#D32F2F', backgroundColor: '#FFEBEE' },
-  errTxt: { color: '#D32F2F', fontSize: 12, marginTop: 4 },
-  secBox: { backgroundColor: '#EAF4EC', borderRadius: 10, padding: 12, marginBottom: 16, borderLeftWidth: 3, borderLeftColor: '#6D9F71' },
-  secTxt: { fontSize: 12, color: '#337357', lineHeight: 18 },
-  saveBtn: { backgroundColor: '#337357', borderRadius: 14, paddingVertical: 15, alignItems: 'center', marginBottom: 10 },
-  saveBtnTxt: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
-  cancelBtn: { alignItems: 'center', paddingVertical: 10 },
-  cancelTxt: { fontSize: 14, color: '#7A7A7A', fontWeight: '600' },
+  hero: { backgroundColor: C.green, borderRadius: R.xl, gap: S.md },
+  heroTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: S.md, flexWrap: 'wrap' },
+  heroLabel: { fontFamily: font, fontSize: 14, fontWeight: '700', color: C.blush },
+  heroValue: { fontFamily: font, fontSize: 60, fontWeight: '800', color: '#fff', letterSpacing: -2, lineHeight: 66 },
+  heroUnit: { fontFamily: font, fontSize: 20, fontWeight: '800', color: C.pink, marginBottom: 10 },
+  addr: { flexDirection: 'row', alignItems: 'center', gap: S.sm, alignSelf: 'flex-start', maxWidth: '100%', backgroundColor: 'rgba(255,255,255,0.12)', paddingHorizontal: 14, paddingVertical: 10, borderRadius: R.pill },
+  addrText: { fontFamily: mono, fontSize: 13.5, color: '#fff', flexShrink: 1 },
+  row: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: S.md, paddingVertical: 6 },
+  rowValue: { fontFamily: font, fontSize: 14, fontWeight: '600', color: C.ink, flexShrink: 1 },
+  receipt: { flexDirection: 'row', alignItems: 'center', gap: S.md, paddingVertical: S.md, borderBottomWidth: 1, borderBottomColor: C.line },
+  receiptIcon: { width: 34, height: 34, borderRadius: 10, backgroundColor: C.greenTint, alignItems: 'center', justifyContent: 'center' },
+  plus: { fontFamily: font, fontSize: 15, fontWeight: '800', color: C.green },
 });

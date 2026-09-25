@@ -29,3 +29,10 @@
 
 # Snapshot cheatcodes output
 /snapshots
+
+# Contract address written by "npm run deploy" (differs per local chain)
+/deployments
+
+# Proof photos uploaded while running locally
+/uploads/*
+!/uploads/.gitkeep

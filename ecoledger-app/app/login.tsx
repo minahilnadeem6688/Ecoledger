@@ -1,370 +1,179 @@
 /**
- * EcoLedger — Login / Register
- * Location: ecoledger-app/app/login.tsx
+ * Sign in / create account. Split layout on wide screens, a single card on phones.
  */
-import React, { useState, useRef, useEffect } from 'react';
-import {
-  View, Text, TextInput, TouchableOpacity, StyleSheet,
-  ScrollView, Animated, StatusBar, Alert, ActivityIndicator, KeyboardAvoidingView, Platform,
-} from 'react-native';
-import { useRouter } from 'expo-router';
-import {
-  loginStudent, createStudentInDB, saveUser,
-  generateRealWallet, isBackendRunning,
-} from '../store';
-
-const C = {
-  bg: '#FFDBE5', rose: '#E27396', amaranth: '#EA9AB2',
-  green: '#6D9F71', dark: '#337357', white: '#FFFFFF',
-  txt: '#2D2D2D', grey: '#7A7A7A', lightGreen: '#EAF4EC',
-  border: '#E0E0E0', err: '#D32F2F', errBg: '#FFEBEE', ph: '#B0B0B0',
-};
+import React, { useState } from 'react';
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Redirect, useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { C, font, R, S, shadow } from '@/constants/theme';
+import { api, ApiError } from '@/lib/api';
+import { useSession } from '@/lib/session';
+import { Button, Field, IconName, Notice, Segmented, useLayout } from '@/components/ui';
 
 type Mode = 'login' | 'register';
 
-export default function LoginScreen() {
-  const router = useRouter();
+const POINTS: { icon: IconName; title: string; body: string }[] = [
+  { icon: 'camera-outline', title: 'Log an eco-action', body: 'Add a photo and a short note about what you did.' },
+  { icon: 'shield-checkmark-outline', title: 'Get it verified', body: 'An admin reviews the proof and approves it.' },
+  { icon: 'cube-outline', title: 'Earn tokens on-chain', body: 'Approval mints Campus Carbon Tokens to your wallet.' },
+];
 
+export default function Login() {
+  const { ready, user, health, signIn } = useSession();
+  const { isDesktop, isTablet } = useLayout();
+  const router = useRouter();
   const [mode, setMode] = useState<Mode>('login');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-
-  const [nameErr, setNameErr] = useState('');
-  const [emailErr, setEmailErr] = useState('');
-  const [passErr, setPassErr] = useState('');
-  const [confirmErr, setConfirmErr] = useState('');
-
-  const [focused, setFocused] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState('');
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [formError, setFormError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [backendOnline, setBackendOnline] = useState(false);
 
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(30)).current;
+  if (ready && user) return <Redirect href={user.role === 'admin' ? '/admin' : '/'} />;
 
-  useEffect(() => {
-    Animated.parallel([
-      Animated.spring(fadeAnim, { toValue: 1, useNativeDriver: true, tension: 55, friction: 9 }),
-      Animated.spring(slideAnim, { toValue: 0, useNativeDriver: true, tension: 55, friction: 9 }),
-    ]).start();
-    isBackendRunning().then(setBackendOnline);
-  }, []);
-
-  const switchMode = (m: Mode) => {
-    setMode(m);
-    setNameErr(''); setEmailErr(''); setPassErr(''); setConfirmErr('');
-    Animated.sequence([
-      Animated.timing(fadeAnim, { toValue: 0.6, duration: 120, useNativeDriver: true }),
-      Animated.spring(fadeAnim, { toValue: 1, useNativeDriver: true, tension: 60, friction: 9 }),
-    ]).start();
+  const validate = () => {
+    const e: Record<string, string> = {};
+    if (mode === 'register' && name.trim().length < 2) e.name = 'Please enter your name.';
+    if (!/^\S+@\S+\.\S+$/.test(email.trim())) e.email = 'Please enter a valid email address.';
+    if (password.length < (mode === 'register' ? 6 : 1)) e.password = mode === 'register' ? 'Use at least 6 characters.' : 'Please enter your password.';
+    if (mode === 'register' && confirm !== password) e.confirm = 'Passwords do not match.';
+    setErrors(e);
+    return Object.keys(e).length === 0;
   };
 
-  const iBox = (f: string, err: boolean) => [
-    s.inputBox,
-    focused === f && !err && s.inputFocused,
-    err && s.inputError,
-  ];
-
-  const clearErrors = () => {
-    setNameErr(''); setEmailErr(''); setPassErr(''); setConfirmErr('');
-  };
-
-  // ─── Login ────────────────────────────────────────────────────────────────
-  const handleLogin = async () => {
-    clearErrors();
-    let ok = true;
-    if (!email.trim()) { setEmailErr('Enter your email'); ok = false; }
-    else if (!/\S+@\S+\.\S+/.test(email)) { setEmailErr('Enter a valid email'); ok = false; }
-    if (!password) { setPassErr('Enter your password'); ok = false; }
-    if (!ok) return;
-
+  const submit = async () => {
+    setFormError('');
+    if (!validate()) return;
     setLoading(true);
     try {
-      const user = await loginStudent(email.trim().toLowerCase(), password);
-      if (user) {
-        router.replace('/(tabs)' as any);
-      } else {
-        Alert.alert(
-          'Login Failed',
-          backendOnline
-            ? 'Incorrect email or password.'
-            : 'Backend offline — no local account found for this email.',
-        );
-      }
+      const res = mode === 'login'
+        ? await api.login(email.trim(), password)
+        : await api.register(name.trim(), email.trim(), password);
+      await signIn(res.token, res.user);
+      router.replace(res.user.role === 'admin' ? '/admin' : '/');
     } catch (e) {
-      Alert.alert('Error', 'Something went wrong. Please try again.');
+      const msg = e instanceof Error ? e.message : 'Something went wrong.';
+      if (e instanceof ApiError && (e.status === 404 || e.status === 409)) setErrors({ email: msg });
+      else if (e instanceof ApiError && e.status === 401) setErrors({ password: msg });
+      else setFormError(msg);
     } finally {
       setLoading(false);
     }
   };
 
-  // ─── Register ─────────────────────────────────────────────────────────────
-  const handleRegister = async () => {
-    clearErrors();
-    let ok = true;
-    if (!name.trim() || name.trim().length < 2) { setNameErr('Enter your full name (min 2 chars)'); ok = false; }
-    if (!email.trim()) { setEmailErr('Enter your email'); ok = false; }
-    else if (!/\S+@\S+\.\S+/.test(email)) { setEmailErr('Enter a valid email'); ok = false; }
-    if (!password || password.length < 6) { setPassErr('Password must be at least 6 characters'); ok = false; }
-    if (password !== confirmPassword) { setConfirmErr('Passwords do not match'); ok = false; }
-    if (!ok) return;
+  const switchMode = (m: Mode) => { setMode(m); setErrors({}); setFormError(''); };
+  const offline = health && !health.server;
 
-    setLoading(true);
-    try {
-      // Generate a real Ethereum wallet for this student
-      const { address, privateKey } = generateRealWallet();
+  const intro = (
+    <View style={[s.intro, !isDesktop && s.introCompact]}>
+      <View style={s.brandRow}>
+        <View style={s.logo}><Ionicons name="leaf" size={isDesktop ? 26 : 22} color="#fff" /></View>
+        <Text style={[s.brand, !isDesktop && { fontSize: 30 }]}>EcoLedger</Text>
+      </View>
+      <Text style={[s.tagline, !isDesktop && { fontSize: 17 }]}>Track. Earn. Sustain.</Text>
+      {isDesktop && (
+        <>
+          <Text style={s.lead}>
+            A campus rewards ledger for real environmental work. Every approved action is minted as a
+            token, so your record is transparent and can{"'"}t be edited after the fact.
+          </Text>
+          <View style={{ gap: S.lg, marginTop: S.md }}>
+            {POINTS.map((p) => (
+              <View key={p.title} style={s.point}>
+                <View style={s.pointIcon}><Ionicons name={p.icon} size={20} color={C.green} /></View>
+                <View style={{ flex: 1 }}>
+                  <Text style={s.pointTitle}>{p.title}</Text>
+                  <Text style={s.pointBody}>{p.body}</Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        </>
+      )}
+    </View>
+  );
 
-      const newUser = {
-        name: name.trim(),
-        email: email.trim().toLowerCase(),
-        password,
-        walletAddress: address,
-      };
+  const form = (
+    <View style={[s.card, { padding: isTablet ? S.xxl : S.xl }]}>
+      <View style={{ alignSelf: 'flex-start' }}>
+        <Segmented<Mode>
+          value={mode}
+          onChange={switchMode}
+          options={[{ value: 'login', label: 'Sign in' }, { value: 'register', label: 'Create account' }]}
+        />
+      </View>
+      <View style={{ gap: 4 }}>
+        <Text style={s.formTitle}>{mode === 'login' ? 'Welcome back' : 'Join EcoLedger'}</Text>
+        <Text style={s.formSub}>
+          {mode === 'login' ? 'Sign in to log activities and check your tokens.' : 'A wallet address is created for you automatically.'}
+        </Text>
+      </View>
 
-      if (backendOnline) {
-        const result = await createStudentInDB(newUser);
-        if (result && (result._id || result.student?._id)) {
-          const raw = result.student ?? result;
-          await saveUser({
-            _id: raw._id,
-            name: raw.name ?? name.trim(),
-            email: raw.email ?? email.trim().toLowerCase(),
-            walletAddress: raw.walletAddress ?? address,
-            ecoPoints: raw.ecoPoints ?? 0,
-            cctTokens: raw.cctTokens ?? 0,
-          });
-          Alert.alert(
-            '🎉 Account Created!',
-            `Welcome, ${name.trim()}!\n\nYour Ethereum wallet has been generated:\n${address.slice(0, 10)}...${address.slice(-4)}\n\nKeep your private key safe:\n${privateKey.slice(0, 10)}...`,
-            [{ text: 'Get Started', onPress: () => router.replace('/(tabs)' as any) }],
-          );
-          return;
-        }
-        // Backend returned an error
-        Alert.alert('Registration Failed', result?.message ?? 'Could not create account. Email may already be in use.');
-      } else {
-        // Offline fallback — save locally
-        await saveUser({
-          name: name.trim(),
-          email: email.trim().toLowerCase(),
-          walletAddress: address,
-          ecoPoints: 0,
-          cctTokens: 0,
-        });
-        Alert.alert(
-          '✅ Account Created (Offline)',
-          `Welcome, ${name.trim()}!\n\nAccount saved locally. Connect backend to sync.\n\nWallet: ${address.slice(0, 10)}...${address.slice(-4)}`,
-          [{ text: 'Get Started', onPress: () => router.replace('/(tabs)' as any) }],
-        );
-      }
-    } catch (e) {
-      Alert.alert('Error', 'Something went wrong. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-  };
+      {offline ? <Notice tone="red" icon="cloud-offline-outline">The EcoLedger server is not reachable. Start the backend with {'"npm start"'} and try again.</Notice> : null}
+      {formError ? <Notice tone="red" icon="alert-circle">{formError}</Notice> : null}
+
+      <View style={{ gap: S.lg }}>
+        {mode === 'register' && (
+          <Field label="Full name" value={name} onChangeText={setName} placeholder="Your name" autoComplete="name" error={errors.name} />
+        )}
+        <Field label="Email" value={email} onChangeText={setEmail} placeholder="you@university.edu" keyboardType="email-address" autoCapitalize="none" autoComplete="email" error={errors.email} />
+        <Field label="Password" value={password} onChangeText={setPassword} placeholder={mode === 'register' ? 'At least 6 characters' : 'Your password'} secureTextEntry autoComplete={mode === 'login' ? 'current-password' : 'new-password'} error={errors.password} onSubmitEditing={mode === 'login' ? submit : undefined} />
+        {mode === 'register' && (
+          <Field label="Confirm password" value={confirm} onChangeText={setConfirm} placeholder="Type it again" secureTextEntry autoComplete="new-password" error={errors.confirm} onSubmitEditing={submit} />
+        )}
+      </View>
+
+      <Button full label={mode === 'login' ? 'Sign in' : 'Create account'} onPress={submit} loading={loading} icon={mode === 'login' ? 'log-in-outline' : 'person-add-outline'} />
+
+      <Pressable onPress={() => switchMode(mode === 'login' ? 'register' : 'login')} style={{ alignSelf: 'center' }}>
+        <Text style={s.switch}>
+          {mode === 'login' ? 'New here? ' : 'Already have an account? '}
+          <Text style={{ color: C.roseDeep, fontWeight: '700' }}>{mode === 'login' ? 'Create an account' : 'Sign in'}</Text>
+        </Text>
+      </Pressable>
+    </View>
+  );
 
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1 }}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
-      <View style={s.root}>
-        <StatusBar barStyle="light-content" backgroundColor="#1A1A1A" />
-
-        <ScrollView
-          contentContainerStyle={s.scroll}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-        >
-          {/* Hero */}
-          <Animated.View style={[s.hero, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
-            <Text style={s.leaf}>🌿</Text>
-            <Text style={s.brand}>EcoLedger</Text>
-            <Text style={s.tagline}>Earn tokens for sustainable actions</Text>
-          </Animated.View>
-
-          {/* Backend status pill */}
-          <View style={s.statusWrap}>
-            <View style={[s.statusPill, { backgroundColor: backendOnline ? '#E8F5E9' : '#FFF8E1' }]}>
-              <View style={[s.statusDot, { backgroundColor: backendOnline ? C.green : '#F59E0B' }]} />
-              <Text style={[s.statusTxt, { color: backendOnline ? C.dark : '#92400E' }]}>
-                {backendOnline ? 'Backend connected ✓' : 'Backend offline — local mode'}
-              </Text>
-            </View>
+    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: C.blush }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <ScrollView contentContainerStyle={[s.page, isDesktop && s.pageWide]} keyboardShouldPersistTaps="handled">
+        {isDesktop ? (
+          <View style={s.split}>
+            <View style={{ flex: 1.1 }}>{intro}</View>
+            <View style={{ flex: 1, maxWidth: 460 }}>{form}</View>
           </View>
-
-          {/* Mode toggle */}
-          <View style={s.toggleRow}>
-            <TouchableOpacity
-              style={[s.toggleBtn, mode === 'login' && s.toggleActive]}
-              onPress={() => switchMode('login')}
-              activeOpacity={0.8}
-            >
-              <Text style={[s.toggleTxt, mode === 'login' && s.toggleTxtActive]}>Login</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[s.toggleBtn, mode === 'register' && s.toggleActive]}
-              onPress={() => switchMode('register')}
-              activeOpacity={0.8}
-            >
-              <Text style={[s.toggleTxt, mode === 'register' && s.toggleTxtActive]}>Register</Text>
-            </TouchableOpacity>
+        ) : (
+          <View style={{ width: '100%', maxWidth: 460, alignSelf: 'center', gap: S.xl }}>
+            {intro}
+            {form}
           </View>
-
-          {/* Card */}
-          <Animated.View style={[s.card, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
-
-            {mode === 'register' && (
-              <>
-                <Text style={s.label}>Full Name *</Text>
-                <View style={iBox('name', !!nameErr)}>
-                  <TextInput
-                    style={s.input}
-                    placeholder="e.g. Ali Ahmed"
-                    placeholderTextColor={C.ph}
-                    value={name}
-                    onChangeText={t => { setName(t); setNameErr(''); }}
-                    onFocus={() => setFocused('name')}
-                    onBlur={() => setFocused(null)}
-                    autoCapitalize="words"
-                  />
-                </View>
-                {!!nameErr && <Text style={s.err}>⚠ {nameErr}</Text>}
-              </>
-            )}
-
-            <Text style={s.label}>Email *</Text>
-            <View style={iBox('email', !!emailErr)}>
-              <TextInput
-                style={s.input}
-                placeholder="student@university.edu"
-                placeholderTextColor={C.ph}
-                value={email}
-                onChangeText={t => { setEmail(t); setEmailErr(''); }}
-                onFocus={() => setFocused('email')}
-                onBlur={() => setFocused(null)}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-            </View>
-            {!!emailErr && <Text style={s.err}>⚠ {emailErr}</Text>}
-
-            <Text style={s.label}>Password *</Text>
-            <View style={iBox('pass', !!passErr)}>
-              <TextInput
-                style={s.input}
-                placeholder={mode === 'register' ? 'Min 6 characters' : 'Your password'}
-                placeholderTextColor={C.ph}
-                value={password}
-                onChangeText={t => { setPassword(t); setPassErr(''); }}
-                onFocus={() => setFocused('pass')}
-                onBlur={() => setFocused(null)}
-                secureTextEntry
-              />
-            </View>
-            {!!passErr && <Text style={s.err}>⚠ {passErr}</Text>}
-
-            {mode === 'register' && (
-              <>
-                <Text style={s.label}>Confirm Password *</Text>
-                <View style={iBox('confirm', !!confirmErr)}>
-                  <TextInput
-                    style={s.input}
-                    placeholder="Re-enter your password"
-                    placeholderTextColor={C.ph}
-                    value={confirmPassword}
-                    onChangeText={t => { setConfirmPassword(t); setConfirmErr(''); }}
-                    onFocus={() => setFocused('confirm')}
-                    onBlur={() => setFocused(null)}
-                    secureTextEntry
-                  />
-                </View>
-                {!!confirmErr && <Text style={s.err}>⚠ {confirmErr}</Text>}
-
-                <View style={s.walletNote}>
-                  <Text style={{ fontSize: 16, marginRight: 8 }}>🔑</Text>
-                  <Text style={s.walletNoteTxt}>
-                    An Ethereum wallet will be automatically generated for you to receive CCT tokens.
-                  </Text>
-                </View>
-              </>
-            )}
-
-            <TouchableOpacity
-              style={[s.btn, loading && { opacity: 0.75 }]}
-              onPress={mode === 'login' ? handleLogin : handleRegister}
-              activeOpacity={0.85}
-              disabled={loading}
-            >
-              {loading ? (
-                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                  <ActivityIndicator color={C.white} style={{ marginRight: 10 }} />
-                  <Text style={s.btnTxt}>
-                    {mode === 'login' ? 'Signing in...' : 'Creating account...'}
-                  </Text>
-                </View>
-              ) : (
-                <Text style={s.btnTxt}>
-                  {mode === 'login' ? 'Sign In' : 'Create Account'}
-                </Text>
-              )}
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={s.switchLink}
-              onPress={() => switchMode(mode === 'login' ? 'register' : 'login')}
-              activeOpacity={0.7}
-            >
-              <Text style={s.switchTxt}>
-                {mode === 'login'
-                  ? "Don't have an account? "
-                  : 'Already have an account? '}
-                <Text style={s.switchBold}>
-                  {mode === 'login' ? 'Register' : 'Sign In'}
-                </Text>
-              </Text>
-            </TouchableOpacity>
-          </Animated.View>
-
-          <Text style={s.footer}>Powered by EcoLedger 🌱</Text>
-        </ScrollView>
-      </View>
+        )}
+      </ScrollView>
     </KeyboardAvoidingView>
   );
 }
 
 const s = StyleSheet.create({
-  root: { flex: 1, backgroundColor: C.bg },
-  scroll: { flexGrow: 1, paddingBottom: 40 },
-  hero: { alignItems: 'center', paddingTop: 60, paddingBottom: 24 },
-  leaf: { fontSize: 52, marginBottom: 10 },
-  brand: { fontSize: 36, fontWeight: '900', color: C.dark, letterSpacing: -1 },
-  tagline: { fontSize: 14, color: C.green, fontWeight: '500', marginTop: 6 },
-  statusWrap: { alignItems: 'center', marginBottom: 16 },
-  statusPill: { flexDirection: 'row', alignItems: 'center', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 6 },
-  statusDot: { width: 7, height: 7, borderRadius: 4, marginRight: 7 },
-  statusTxt: { fontSize: 12, fontWeight: '500' },
-  toggleRow: { flexDirection: 'row', marginHorizontal: 24, marginBottom: 16, backgroundColor: C.white, borderRadius: 14, padding: 4, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 6, elevation: 2 },
-  toggleBtn: { flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 11 },
-  toggleActive: { backgroundColor: C.dark },
-  toggleTxt: { fontSize: 15, fontWeight: '600', color: C.grey },
-  toggleTxtActive: { color: C.white },
-  card: { marginHorizontal: 24, backgroundColor: C.white, borderRadius: 24, padding: 24, shadowColor: C.rose, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.1, shadowRadius: 20, elevation: 6 },
-  label: { fontSize: 13, fontWeight: '600', color: C.dark, marginBottom: 8, marginTop: 6 },
-  inputBox: { borderWidth: 1.5, borderColor: C.border, borderRadius: 12, backgroundColor: '#FAFAFA', marginBottom: 6 },
-  inputFocused: { borderColor: C.green, backgroundColor: C.white },
-  inputError: { borderColor: C.err, backgroundColor: C.errBg },
-  input: { height: 50, paddingHorizontal: 16, fontSize: 15, color: C.txt },
-  err: { color: C.err, fontSize: 12, marginBottom: 8, fontWeight: '500' },
-  walletNote: { flexDirection: 'row', alignItems: 'flex-start', backgroundColor: C.lightGreen, borderRadius: 12, padding: 12, marginTop: 6, marginBottom: 4, borderLeftWidth: 3, borderLeftColor: C.green },
-  walletNoteTxt: { flex: 1, fontSize: 12, color: C.dark, lineHeight: 18 },
-  btn: { backgroundColor: C.dark, borderRadius: 12, height: 52, alignItems: 'center', justifyContent: 'center', marginTop: 16, shadowColor: C.dark, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.28, shadowRadius: 10, elevation: 5 },
-  btnTxt: { color: C.white, fontSize: 16, fontWeight: '700' },
-  switchLink: { alignItems: 'center', marginTop: 16, paddingVertical: 4 },
-  switchTxt: { fontSize: 14, color: C.grey },
-  switchBold: { color: C.dark, fontWeight: '700' },
-  footer: { textAlign: 'center', fontSize: 12, color: C.grey, marginTop: 28 },
+  page: { flexGrow: 1, justifyContent: 'center', padding: S.lg, paddingVertical: S.xxxl },
+  pageWide: { padding: S.xxxl },
+  split: { flexDirection: 'row', alignItems: 'center', gap: 64, width: '100%', maxWidth: 1080, alignSelf: 'center' },
+
+  intro: { gap: S.md },
+  introCompact: { alignItems: 'center' },
+  brandRow: { flexDirection: 'row', alignItems: 'center', gap: S.md },
+  logo: { width: 48, height: 48, borderRadius: 14, backgroundColor: C.green, alignItems: 'center', justifyContent: 'center' },
+  brand: { fontFamily: font, fontSize: 44, fontWeight: '800', color: C.green, letterSpacing: -1.2 },
+  tagline: { fontFamily: font, fontSize: 22, fontWeight: '700', color: C.roseDeep, letterSpacing: -0.2 },
+  lead: { fontFamily: font, fontSize: 17, lineHeight: 26, color: C.text, maxWidth: 480, marginTop: S.sm },
+  point: { flexDirection: 'row', gap: S.md, alignItems: 'flex-start', maxWidth: 440 },
+  pointIcon: { width: 40, height: 40, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.7)', alignItems: 'center', justifyContent: 'center' },
+  pointTitle: { fontFamily: font, fontSize: 16, fontWeight: '700', color: C.ink },
+  pointBody: { fontFamily: font, fontSize: 14.5, lineHeight: 21, color: C.text, marginTop: 2 },
+
+  card: { backgroundColor: '#fff', borderRadius: R.xl, gap: S.xl, ...shadow },
+  formTitle: { fontFamily: font, fontSize: 24, fontWeight: '800', color: C.ink, letterSpacing: -0.4 },
+  formSub: { fontFamily: font, fontSize: 14.5, color: C.muted, lineHeight: 20 },
+  switch: { fontFamily: font, fontSize: 14, color: C.muted },
 });

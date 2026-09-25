@@ -1,108 +1,95 @@
 /**
- * EcoLedger — Leaderboard
- * Location: ecoledger-app/app/leaderboard.tsx
+ * Leaderboard, ranked by CCT minted (the on-chain record, not spendable points).
  */
-import React, { useState, useCallback } from 'react';
-import { View, Text, ScrollView, StyleSheet, StatusBar, RefreshControl } from 'react-native';
-import { useFocusEffect } from 'expo-router';
-import Header from '../components/Header';
-import Footer from '../components/Footer';
-import { getLeaderboard, LeaderEntry } from '../store';
+import React from 'react';
+import { StyleSheet, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { C, font, R, S } from '@/constants/theme';
+import { api } from '@/lib/api';
+import { useSession } from '@/lib/session';
+import { useLoad } from '@/lib/useLoad';
+import { Card, Empty, Loading, Notice, PageTitle, Screen, useLayout } from '@/components/ui';
 
-const C = { bg: '#FFDBE5', rose: '#E27396', amaranth: '#EA9AB2', green: '#6D9F71', dark: '#337357', white: '#FFFFFF', txt: '#2D2D2D', grey: '#7A7A7A', lightGreen: '#EAF4EC', gold: '#F59E0B', silver: '#9E9E9E', bronze: '#CD7F32' };
+const MEDAL = ['#D9A521', '#9AA5A0', '#B7794B'];
 
 export default function Leaderboard() {
-  const [board, setBoard] = useState<LeaderEntry[]>([]);
-  const [refreshing, setRefreshing] = useState(false);
-
-  const load = useCallback(async () => { setBoard(await getLeaderboard()); }, []);
-  useFocusEffect(useCallback(() => { load(); }, [load]));
-
-  const top3 = board.slice(0, 3);
-  const rest = board.slice(3);
-  const medals = ['🥇', '🥈', '🥉'];
-  const podiumBg = [C.dark, '#4A7C5C', '#F0EDE8'];
-  const podiumTxt = [C.white, C.white, C.txt];
-  const podiumHeights = [130, 100, 85];
-  // visual order: 2nd | 1st | 3rd
-  const podiumOrder = [1, 0, 2].map(i => ({ entry: top3[i], realRank: i })).filter(x => x.entry);
+  const { user } = useSession();
+  const { isTablet } = useLayout();
+  const { data, loading, error } = useLoad(() => api.leaderboard());
+  const list = data || [];
+  const top = list.slice(0, 3);
+  // podium order: 2nd, 1st, 3rd
+  const podium = top.length === 3 ? [top[1], top[0], top[2]] : top;
+  const rankOf = (id: string) => list.findIndex((p) => p._id === id) + 1;
 
   return (
-    <View style={s.root}>
-      <StatusBar barStyle="light-content" backgroundColor="#1A1A1A" />
-      <Header />
-      <ScrollView showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={async () => { setRefreshing(true); await load(); setRefreshing(false); }} tintColor={C.dark} />}>
-
-        {/* Title */}
-        <View style={s.titleBar}>
-          <Text style={s.pageTitle}>Leaderboard</Text>
-          <Text style={s.pageSub}>Top Eco Contributors 🌱</Text>
-          <Text style={s.based}>Based on verified activities</Text>
-        </View>
-
-        {/* Podium */}
-        {top3.length > 0 && (
-          <View style={s.podiumWrap}>
-            {podiumOrder.map(({ entry, realRank }, idx) => (
-              <View key={entry.name} style={[s.podiumItem, { justifyContent: 'flex-end', height: podiumHeights[realRank] + 70 }]}>
-                <Text style={s.podiumMedal}>{medals[realRank]}</Text>
-                <View style={[s.podiumBlock, {
-                  height: podiumHeights[realRank],
-                  backgroundColor: podiumBg[realRank],
-                  borderWidth: entry.isCurrentUser ? 2 : 0,
-                  borderColor: C.rose,
-                }]}>
-                  <Text style={[s.podiumName, { color: podiumTxt[realRank] }]}>{entry.name.split(' ')[0]}</Text>
-                  <Text style={[s.podiumPts, { color: podiumTxt[realRank], opacity: 0.85 }]}>{entry.pts} pts</Text>
-                </View>
-              </View>
-            ))}
-          </View>
-        )}
-
-        {/* Rest of list */}
-        <View style={s.listCard}>
-          {rest.map((entry, i) => (
-            <View key={entry.name} style={[s.listRow, entry.isCurrentUser && s.listRowMe, i > 0 && { borderTopWidth: 1, borderTopColor: '#F0F0F0' }]}>
-              <Text style={[s.rank, entry.isCurrentUser && { color: C.dark, fontWeight: '800' }]}>#{i + 4}</Text>
-              <View style={s.nameWrap}>
-                <Text style={[s.listName, entry.isCurrentUser && { color: C.dark, fontWeight: '800' }]}>{entry.name}</Text>
-                {entry.isCurrentUser && <View style={s.youBadge}><Text style={s.youTxt}>You</Text></View>}
-              </View>
-              <Text style={[s.listPts, entry.isCurrentUser && { color: C.dark, fontWeight: '800' }]}>{entry.pts} pts</Text>
+    <Screen role="any" maxWidth={820}>
+      <PageTitle title="Leaderboard" subtitle="Ranked by Campus Carbon Tokens minted for verified actions." />
+      {error ? <Notice tone="red" icon="alert-circle">{error}</Notice> : null}
+      {loading ? <Loading /> : list.length === 0 ? (
+        <Empty icon="trophy-outline" title="No rankings yet" body="Rankings appear once the first activities are approved." />
+      ) : (
+        <>
+          {isTablet && top.length === 3 ? (
+            <View style={s.podium}>
+              {podium.map((p) => {
+                const rank = rankOf(p._id);
+                return (
+                  <View key={p._id} style={[s.step, rank === 1 && s.stepFirst]}>
+                    <View style={[s.avatar, { borderColor: MEDAL[rank - 1] }]}>
+                      <Text style={s.avatarText}>{p.name[0]?.toUpperCase()}</Text>
+                    </View>
+                    <Ionicons name="trophy" size={rank === 1 ? 24 : 20} color={MEDAL[rank - 1]} />
+                    <Text style={s.podName} numberOfLines={1}>{p.name}</Text>
+                    <Text style={s.podValue}>{p.cctTokens} CCT</Text>
+                    <View style={[s.block, { height: rank === 1 ? 70 : rank === 2 ? 50 : 36 }]}>
+                      <Text style={s.blockText}>{rank}</Text>
+                    </View>
+                  </View>
+                );
+              })}
             </View>
-          ))}
-          <View style={s.poweredBy}><Text style={s.poweredTxt}>Powered by EcoLedger</Text></View>
-        </View>
+          ) : null}
 
-        <Footer />
-      </ScrollView>
-    </View>
+          <Card style={{ paddingVertical: S.sm }}>
+            {list.map((p, i) => {
+              const me = p._id === user?._id;
+              return (
+                <View key={p._id} style={[s.row, me && s.rowMe, i === list.length - 1 && { borderBottomWidth: 0 }]}>
+                  <View style={[s.rank, i < 3 && { backgroundColor: MEDAL[i] }]}>
+                    <Text style={[s.rankText, i < 3 && { color: '#fff' }]}>{i + 1}</Text>
+                  </View>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={s.name} numberOfLines={1}>{p.name}{me ? '  (you)' : ''}</Text>
+                    <Text style={s.sub}>{p.ecoPoints} eco points to spend</Text>
+                  </View>
+                  <Text style={s.value}>{p.cctTokens}<Text style={s.unit}> CCT</Text></Text>
+                </View>
+              );
+            })}
+          </Card>
+        </>
+      )}
+    </Screen>
   );
 }
 
 const s = StyleSheet.create({
-  root: { flex: 1, backgroundColor: C.bg },
-  titleBar: { paddingHorizontal: 20, paddingTop: 24, paddingBottom: 16, alignItems: 'center' },
-  pageTitle: { fontSize: 30, fontWeight: '800', color: C.dark, textAlign: 'center' },
-  pageSub: { fontSize: 16, color: C.green, fontWeight: '600', marginTop: 4, textAlign: 'center' },
-  based: { fontSize: 13, color: C.grey, marginTop: 4, textAlign: 'center' },
-  podiumWrap: { flexDirection: 'row', justifyContent: 'center', alignItems: 'flex-end', marginHorizontal: 20, marginBottom: 24, gap: 10 },
-  podiumItem: { alignItems: 'center', flex: 1 },
-  podiumMedal: { fontSize: 28, marginBottom: 6 },
-  podiumBlock: { width: '100%', borderRadius: 14, alignItems: 'center', justifyContent: 'center', paddingVertical: 10 },
-  podiumName: { fontSize: 15, fontWeight: '700' },
-  podiumPts: { fontSize: 13, marginTop: 2 },
-  listCard: { marginHorizontal: 20, backgroundColor: C.white, borderRadius: 20, overflow: 'hidden', marginBottom: 24, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 5 },
-  listRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingVertical: 16 },
-  listRowMe: { backgroundColor: C.lightGreen },
-  rank: { fontSize: 14, color: C.grey, width: 40, fontWeight: '600' },
-  nameWrap: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 },
-  listName: { fontSize: 15, color: C.txt, fontWeight: '500' },
-  youBadge: { backgroundColor: C.rose, borderRadius: 8, paddingHorizontal: 7, paddingVertical: 2 },
-  youTxt: { color: C.white, fontSize: 10, fontWeight: '800' },
-  listPts: { fontSize: 15, color: C.rose, fontWeight: '600' },
-  poweredBy: { alignItems: 'center', paddingVertical: 16, borderTopWidth: 1, borderTopColor: '#F0F0F0' },
-  poweredTxt: { fontSize: 12, color: C.grey },
+  podium: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'center', gap: S.lg, paddingTop: S.md },
+  step: { flex: 1, maxWidth: 200, alignItems: 'center', gap: 6 },
+  stepFirst: { marginBottom: 0 },
+  avatar: { width: 60, height: 60, borderRadius: 30, borderWidth: 3, backgroundColor: C.blush, alignItems: 'center', justifyContent: 'center' },
+  avatarText: { fontFamily: font, fontSize: 24, fontWeight: '800', color: C.roseDeep },
+  podName: { fontFamily: font, fontSize: 15, fontWeight: '700', color: C.ink, maxWidth: '100%' },
+  podValue: { fontFamily: font, fontSize: 13.5, fontWeight: '700', color: C.green },
+  block: { alignSelf: 'stretch', backgroundColor: C.green, borderTopLeftRadius: R.md, borderTopRightRadius: R.md, alignItems: 'center', justifyContent: 'center', marginTop: 4 },
+  blockText: { fontFamily: font, fontSize: 20, fontWeight: '800', color: '#fff' },
+  row: { flexDirection: 'row', alignItems: 'center', gap: S.md, paddingVertical: S.md, paddingHorizontal: S.sm, borderBottomWidth: 1, borderBottomColor: C.line },
+  rowMe: { backgroundColor: C.roseTint, borderRadius: R.md },
+  rank: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#F1EEEF', alignItems: 'center', justifyContent: 'center' },
+  rankText: { fontFamily: font, fontSize: 14, fontWeight: '800', color: C.muted },
+  name: { fontFamily: font, fontSize: 16, fontWeight: '700', color: C.ink },
+  sub: { fontFamily: font, fontSize: 13, color: C.muted, marginTop: 2 },
+  value: { fontFamily: font, fontSize: 20, fontWeight: '800', color: C.green },
+  unit: { fontSize: 13, color: C.muted },
 });

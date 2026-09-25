@@ -1,53 +1,58 @@
 /**
- * Below are the colors that are used in the app. The colors are defined in the light and dark mode.
- * There are many other ways to style your app. For example, [Nativewind](https://www.nativewind.dev/), [Tamagui](https://tamagui.dev/), [unistyles](https://reactnativeunistyles.vercel.app), etc.
+ * EcoLedger design tokens, from the project palette:
+ * Rose Pompadour #E27396 · Amaranth Pink #EA9AB2 · Mimi Pink #FFDBE5
+ * Asparagus #6D9F71 · Dark Spring Green #337357
  */
-
 import { Platform } from 'react-native';
 
-const tintColorLight = '#0a7ea4';
-const tintColorDark = '#fff';
-
-export const Colors = {
-  light: {
-    text: '#11181C',
-    background: '#fff',
-    tint: tintColorLight,
-    icon: '#687076',
-    tabIconDefault: '#687076',
-    tabIconSelected: tintColorLight,
-  },
-  dark: {
-    text: '#ECEDEE',
-    background: '#151718',
-    tint: tintColorDark,
-    icon: '#9BA1A6',
-    tabIconDefault: '#9BA1A6',
-    tabIconSelected: tintColorDark,
-  },
+export const C = {
+  bg: '#FFF3F6',
+  blush: '#FFDBE5',
+  pink: '#EA9AB2',
+  rose: '#E27396',
+  roseDeep: '#C4587B',
+  sage: '#6D9F71',
+  green: '#337357',
+  greenDeep: '#23513D',
+  ink: '#1B2B24',
+  text: '#33423B',
+  muted: '#6E7C75',
+  line: '#F1D6DF',
+  lineStrong: '#E6BFCC',
+  card: '#FFFFFF',
+  greenTint: '#E7F1E8',
+  roseTint: '#FDEAF0',
+  amber: '#A8680C',
+  amberTint: '#FFF1D6',
+  red: '#B4432A',
+  redTint: '#FCE3DC',
 };
 
-export const Fonts = Platform.select({
-  ios: {
-    /** iOS `UIFontDescriptorSystemDesignDefault` */
-    sans: 'system-ui',
-    /** iOS `UIFontDescriptorSystemDesignSerif` */
-    serif: 'ui-serif',
-    /** iOS `UIFontDescriptorSystemDesignRounded` */
-    rounded: 'ui-rounded',
-    /** iOS `UIFontDescriptorSystemDesignMonospaced` */
-    mono: 'ui-monospace',
-  },
+export const R = { sm: 8, md: 12, lg: 18, xl: 24, pill: 999 };
+
+export const S = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32, xxxl: 48 };
+
+export const font = Platform.select({
+  web: "Inter, 'Segoe UI', system-ui, -apple-system, Roboto, Helvetica, Arial, sans-serif",
+  default: undefined,
+});
+
+export const mono = Platform.select({
+  web: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+  ios: 'Menlo',
+  default: 'monospace',
+});
+
+export const shadow: any = Platform.select({
+  web: { boxShadow: '0 1px 2px rgba(51,115,87,0.06), 0 10px 28px -14px rgba(51,115,87,0.22)' },
   default: {
-    sans: 'normal',
-    serif: 'serif',
-    rounded: 'normal',
-    mono: 'monospace',
-  },
-  web: {
-    sans: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
-    serif: "Georgia, 'Times New Roman', serif",
-    rounded: "'SF Pro Rounded', 'Hiragino Maru Gothic ProN', Meiryo, 'MS PGothic', sans-serif",
-    mono: "SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
+    shadowColor: '#337357',
+    shadowOpacity: 0.12,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 3,
   },
 });
+
+/** Breakpoints used by useLayout() */
+export const BP = { tablet: 700, desktop: 1024 };

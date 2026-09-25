@@ -1,77 +1,61 @@
 /**
- * EcoLedger — Reward Routes  (FIXED)
- * Location: ecoledger-backend/routes/rewardRoutes.js
- *
- * BUG E FIX: redeem route only deducted student.ecoPoints but NOT student.cctTokens.
- * After redemption the wallet would still show the old (inflated) token count.
- * Now both fields are deducted together atomically using $inc.
+ * EcoLedger: rewards store. Redeeming spends eco points; on-chain CCT stays as a
+ * permanent record of what the student earned.
  */
-const express    = require('express');
-const router     = express.Router();
-
-const Reward     = require('../models/Reward');
-const Student    = require('../models/Student');
+const express = require('express');
+const Reward = require('../models/Reward');
+const Student = require('../models/Student');
 const Redemption = require('../models/Redemption');
+const { requireAuth, requireAdmin } = require('../middleware/auth');
 
-// ─── Create reward (Admin) ────────────────────────────────────────────────────
-router.post('/create', async (req, res) => {
+const router = express.Router();
+
+router.get('/', async (_req, res) => {
   try {
-    const { title, description, pointsRequired, quantity } = req.body;
-    const reward = new Reward({ title, description, pointsRequired, quantity });
-    await reward.save();
-    res.json({ message: 'Reward created', reward });
+    res.json(await Reward.find().sort({ pointsRequired: 1 }));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// ─── Get all rewards ──────────────────────────────────────────────────────────
-router.get('/', async (req, res) => {
+router.post('/', requireAuth, requireAdmin, async (req, res) => {
   try {
-    const rewards = await Reward.find();
-    res.json(rewards);
+    const { title, description, icon, pointsRequired, quantity } = req.body;
+    res.status(201).json(await Reward.create({ title, description, icon, pointsRequired, quantity }));
+  } catch (error) {
+    res.status(400).json({ error: error.message });
+  }
+});
+
+// GET /api/rewards/mine: redemption history
+router.get('/mine', requireAuth, async (req, res) => {
+  try {
+    res.json(await Redemption.find({ studentId: req.user._id }).populate('rewardId', 'title icon pointsRequired').sort({ redeemedAt: -1 }));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// ─── Redeem reward ────────────────────────────────────────────────────────────
-router.post('/redeem', async (req, res) => {
+// POST /api/rewards/:id/redeem
+router.post('/:id/redeem', requireAuth, async (req, res) => {
   try {
-    const { studentId, rewardId } = req.body;
+    const reward = await Reward.findById(req.params.id);
+    if (!reward) return res.status(404).json({ error: 'Reward not found.' });
 
-    const student = await Student.findById(studentId);
-    const reward  = await Reward.findById(rewardId);
-
-    if (!student || !reward) {
-      return res.status(404).json({ message: 'Student or reward not found' });
+    // Conditional updates: never go below zero, even with two quick taps.
+    const stock = await Reward.findOneAndUpdate({ _id: reward._id, quantity: { $gt: 0 } }, { $inc: { quantity: -1 } }, { new: true });
+    if (!stock) return res.status(409).json({ error: 'This reward is out of stock.' });
+    const student = await Student.findOneAndUpdate(
+      { _id: req.user._id, ecoPoints: { $gte: reward.pointsRequired } },
+      { $inc: { ecoPoints: -reward.pointsRequired } },
+      { new: true },
+    );
+    if (!student) {
+      await Reward.updateOne({ _id: reward._id }, { $inc: { quantity: 1 } });
+      return res.status(400).json({ error: `You need ${reward.pointsRequired} points for this reward.` });
     }
-
-    if (student.ecoPoints < reward.pointsRequired) {
-      return res.json({ message: 'Not enough points' });
-    }
-
-    if (reward.quantity <= 0) {
-      return res.json({ message: 'Reward out of stock' });
-    }
-
-    // BUG E FIX: deduct BOTH ecoPoints and cctTokens atomically
-    await Student.findByIdAndUpdate(studentId, {
-      $inc: {
-        ecoPoints: -reward.pointsRequired,
-        cctTokens: -reward.pointsRequired,
-      }
-    });
-
-    await Reward.findByIdAndUpdate(rewardId, { $inc: { quantity: -1 } });
-
-    const redemption = new Redemption({ studentId, rewardId });
-    await redemption.save();
-
-    console.log(`✅ Redeemed "${reward.title}" by student ${student.name} — -${reward.pointsRequired} pts`);
-
-    res.json({ message: 'Reward redeemed successfully' });
-
+    await Redemption.create({ studentId: student._id, rewardId: reward._id });
+    res.json({ message: `Redeemed: ${reward.title}`, user: student, reward: stock });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

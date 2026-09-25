@@ -1,50 +1,29 @@
-# Welcome to your Expo app 👋
+# EcoLedger app
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
-
-## Get started
-
-1. Install dependencies
-
-   ```bash
-   npm install
-   ```
-
-2. Start the app
-
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
+Expo Router app for students and admins. It runs on the web and on phones, and the
+layout adapts to phone, tablet and desktop widths.
 
 ```bash
-npm run reset-project
+npm install
+npm run web          # browser
+npx expo start       # Expo Go on a phone (same Wi-Fi as the computer running the API)
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+Start the API first (see the [main README](../README.md)). The API address is
+worked out automatically; set `EXPO_PUBLIC_API_URL` to override it.
 
-## Learn more
+| Screen | Route |
+| --- | --- |
+| Sign in / create account | `/login` |
+| Student home | `/` |
+| Log an activity | `/submit-activity` |
+| My activities | `/activities` |
+| Wallet | `/wallet` |
+| Rewards | `/rewards` |
+| Leaderboard | `/leaderboard` |
+| Admin review | `/admin` |
 
-To learn more about developing your project with Expo, look at the following resources:
-
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+Code layout: `app/` screens, `components/ui.tsx` shared UI kit,
+`components/activity.tsx` activity rows, `lib/api.ts` API client,
+`lib/session.tsx` sign-in state and server status, `lib/queue.ts` offline submissions,
+`constants/theme.ts` colours and spacing.
