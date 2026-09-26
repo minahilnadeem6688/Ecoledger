@@ -200,4 +200,4 @@ See [backend/README.md](backend/README.md) for the endpoint list and contract de
 
 ## Author
 
-**Minahil Nadeem** · [GitHub](https://github.com/minahilnadeem6688) · [LinkedIn](https://www.linkedin.com/in/minahil-nadeem23)
+**Minahil Nadeem** · [Portfolio](https://minahil-nadeem.vercel.app) · [GitHub](https://github.com/minahilnadeem6688) · [LinkedIn](https://www.linkedin.com/in/minahil-nadeem23)
