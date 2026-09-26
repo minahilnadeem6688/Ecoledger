@@ -16,9 +16,24 @@ to the student's wallet on Ethereum.
 ![Solidity](https://img.shields.io/badge/Solidity-0.8.20-E27396?logo=solidity&logoColor=white)
 ![Hardhat](https://img.shields.io/badge/Hardhat-tested-E27396)
 
+**[Live demo](https://ecoledger-nine.vercel.app)** ·
+**[API health](https://ecoledger-api.vercel.app/api/health)** ·
+**[CCT token on Sepolia Etherscan](https://sepolia.etherscan.io/address/0x7A2410D4aA29Afff3f24F4DF7A74cF05321361B6)**
+
 <img src="docs/screenshots/home.png" width="860" alt="EcoLedger student home" />
 
 </div>
+
+## Try it
+
+1. Open the **[live demo](https://ecoledger-nine.vercel.app)** and create a student account.
+2. Log an activity with a photo. It waits in the admin's review queue.
+3. When it is approved, the tokens are minted on the Sepolia test network. Your Wallet shows the
+   balance read from the contract, and each receipt links to the transaction on Etherscan.
+
+The token contract is deployed at
+[`0x7A2410D4aA29Afff3f24F4DF7A74cF05321361B6`](https://sepolia.etherscan.io/address/0x7A2410D4aA29Afff3f24F4DF7A74cF05321361B6),
+so every CCT ever minted can be checked publicly.
 
 ## Why
 
