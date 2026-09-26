@@ -10,7 +10,7 @@ npx expo start       # Expo Go on a phone (same Wi-Fi as the computer running th
 ```
 
 Start the API first. The app finds it by itself (same computer, port 5000). To use another API, set
-`EXPO_PUBLIC_API_URL`, e.g. `https://ecoledger-api.onrender.com/api` (see [`.env.example`](.env.example)).
+`EXPO_PUBLIC_API_URL`, e.g. `https://ecoledger-api.vercel.app/api` (see [`.env.example`](.env.example)).
 
 ## Screens
 

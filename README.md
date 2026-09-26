@@ -100,7 +100,7 @@ sequenceDiagram
 | API | Node.js 20, Express 5, Mongoose 9, JWT, bcrypt, Multer |
 | Database | MongoDB (local or MongoDB Atlas); proof photos are stored in MongoDB too |
 | Blockchain | Solidity 0.8.20, OpenZeppelin ERC-20 + Ownable, Hardhat, ethers v6 |
-| Hosting | Vercel (app), Render (API), MongoDB Atlas (database), Sepolia testnet (token) |
+| Hosting | Vercel (app and API), MongoDB Atlas (database), Sepolia testnet (token) |
 | CI | GitHub Actions: contract tests, type check, lint and web build |
 
 ## Project structure
@@ -116,7 +116,8 @@ ecoledger/
 │   ├── routes/               REST endpoints
 │   ├── middleware/           Auth and photo upload
 │   ├── deployments/          Public contract addresses (written by the deploy script)
-│   └── server.js
+│   ├── app.js                Express app (used by server.js and by Vercel's api/index.js)
+│   └── server.js             Normal server for local use or Render
 ├── frontend/                 Expo app (web, Android, iOS)
 │   ├── app/                  Screens (file-based routing)
 │   ├── components/           Shared UI kit and activity rows
@@ -127,7 +128,7 @@ ecoledger/
 │   ├── design/               Colour palette and original screen mockups
 │   ├── screenshots/
 │   └── EcoLedger-proposal.docx
-├── render.yaml               Render blueprint for the API
+├── render.yaml               Optional: run the API on Render instead
 └── .github/workflows/ci.yml
 ```
 
@@ -167,7 +168,7 @@ Change it with `ADMIN_EMAIL` and `ADMIN_PASSWORD` in `backend/.env` (see `backen
 2. **Contract tests:** `cd backend && npm test` runs 7 tests on the token (minting, ownership, events, transfers).
 3. **End-to-end smoke test:** with the API running, `cd backend && npm run smoke`. It registers a test
    student, submits an activity with a photo, approves it as the admin and confirms the tokens arrived
-   on-chain. To test a deployed API: `npm run smoke -- https://your-api.onrender.com`.
+   on-chain. To test a deployed API: `npm run smoke -- https://your-api.vercel.app`.
 4. **By hand:** create a student account, log an activity, sign in as the admin, approve it, then open
    the student's Wallet. The balance goes up and a mint receipt appears.
 
@@ -175,7 +176,7 @@ CI runs the contract tests, type check, lint and web build on every push.
 
 ## Deploy
 
-The app deploys to **Vercel**, the API to **Render**, the database to **MongoDB Atlas** and the token to
+The app and the API deploy to **Vercel** (the API runs as a serverless function), the database to **MongoDB Atlas** and the token to
 the **Sepolia** test network, all on free plans. Follow [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
 ## API

@@ -43,7 +43,15 @@ export default function SubmitActivity() {
     }
     const opts: ImagePicker.ImagePickerOptions = { mediaTypes: ['images'], allowsEditing: true, aspect: [4, 3], quality: 0.7 };
     const r = camera ? await ImagePicker.launchCameraAsync(opts) : await ImagePicker.launchImageLibraryAsync(opts);
-    if (!r.canceled && r.assets[0]) { setImage(r.assets[0].uri); setErrors((e) => ({ ...e, image: '' })); }
+    if (r.canceled || !r.assets[0]) return;
+    const a = r.assets[0];
+    const size = a.fileSize ?? (a as any).file?.size;
+    if (size && size > 4 * 1024 * 1024) {
+      setErrors((e) => ({ ...e, image: 'That photo is over 4 MB. Please choose a smaller one or take a screenshot of it.' }));
+      return;
+    }
+    setImage(a.uri);
+    setErrors((e) => ({ ...e, image: '' }));
   };
 
   const validate = () => {
@@ -126,7 +134,7 @@ export default function SubmitActivity() {
           <Pressable onPress={() => pick(false)} style={({ hovered }: any) => [s.drop, !!errors.image && { borderColor: C.red }, hovered && { backgroundColor: C.roseTint }]}>
             <Ionicons name="image-outline" size={28} color={C.rose} />
             <Text style={t.h3}>Choose a photo</Text>
-            <Text style={t.small}>JPG or PNG, up to 8 MB</Text>
+            <Text style={t.small}>JPG or PNG, up to 4 MB</Text>
           </Pressable>
         )}
         <View style={{ flexDirection: 'row', gap: S.sm, flexWrap: 'wrap' }}>

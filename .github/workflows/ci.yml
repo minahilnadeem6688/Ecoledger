@@ -23,7 +23,7 @@ jobs:
       - name: Contract tests
         run: npm test
       - name: Server loads
-        run: node -e "require('./config/blockchain'); require('./routes/activityRoutes'); require('./routes/studentRoutes'); require('./routes/rewardRoutes')"
+        run: node -e "require('./app'); require('./api/index.js'); require('./config/blockchain'); require('./routes/activityRoutes'); require('./routes/studentRoutes'); require('./routes/rewardRoutes')"
 
   frontend:
     name: App

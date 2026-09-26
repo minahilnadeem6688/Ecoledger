@@ -7,13 +7,16 @@ See the [main README](../README.md) for the full picture and [DEPLOYMENT.md](../
 
 | Command | What it does |
 | --- | --- |
-| `npm start` | Start the API on `PORT` (default 5000) |
+| `npm start` | Start the API on `PORT` (default 5000) via `server.js` |
 | `npm run dev` | Start the API and restart on file changes |
 | `npm run chain` | Local Hardhat blockchain on `127.0.0.1:8545` |
 | `npm run deploy` | Deploy CCT to the local chain (writes `deployments/localhost.json`) |
 | `npm run deploy:sepolia` | Deploy CCT to Sepolia (needs `OWNER_PRIVATE_KEY` with test ETH) |
 | `npm test` | Contract tests |
 | `npm run smoke [-- <api-url>]` | End-to-end check against a running API |
+
+The Express app is in `app.js`. `server.js` runs it as a normal server; `api/index.js` runs it as a
+Vercel serverless function (settings in `vercel.json`).
 
 Configuration lives in `.env`; every option is described in [`.env.example`](.env.example).
 Locally nothing is required.

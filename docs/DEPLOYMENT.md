@@ -5,16 +5,12 @@ This guide puts EcoLedger online with a public link, using free plans only.
 | Part | Where it runs | Why there |
 | --- | --- | --- |
 | App (what visitors open) | **Vercel** | Free static hosting with a `*.vercel.app` link |
-| API | **Render** | Runs a normal always-on Node server, which the API needs (uploads, waiting for blockchain transactions) |
+| API | **Vercel** (or Render) | A second Vercel project runs the API as a serverless function. Free, no card, no sleeping. Render is an alternative if you prefer a classic server |
 | Database | **MongoDB Atlas** | Free 512 MB cluster |
 | Token | **Sepolia** test network | A public Ethereum test chain: real transactions anyone can look up on Etherscan, paid with free test ETH |
 
 Plan about 45 minutes the first time. You need a GitHub account (the repo), and you will create free
-accounts on Vercel, Render and MongoDB Atlas, plus a MetaMask wallet.
-
-> **Why not put the API on Vercel too?** Vercel runs code as short-lived functions. EcoLedger's API waits
-> 10 to 30 seconds for each mint to be confirmed on Sepolia and keeps a connection to MongoDB, which fits
-> a regular server much better. The app itself is a static website, which is exactly what Vercel is for.
+accounts on Vercel and MongoDB Atlas, plus a MetaMask wallet. No bank card is needed.
 
 ---
 
@@ -52,7 +48,7 @@ You do this once, from your own computer.
 
 1. Sign up at [MongoDB Atlas](https://www.mongodb.com/atlas) and create a **free (M0)** cluster.
 2. *Database Access* → add a database user with a password.
-3. *Network Access* → *Add IP address* → *Allow access from anywhere* (`0.0.0.0/0`). Render's
+3. *Network Access* → *Add IP address* → *Allow access from anywhere* (`0.0.0.0/0`). Vercel's
    addresses change, so this is needed on the free plan; the database password still protects it.
 4. *Connect* → *Drivers* → copy the connection string. Put your password in it and add the database
    name `ecoledger` before the `?`:
@@ -61,37 +57,48 @@ You do this once, from your own computer.
    mongodb+srv://user:password@cluster0.xxxxx.mongodb.net/ecoledger?retryWrites=true&w=majority
    ```
 
-## 3. Put the API on Render
+## 3. Put the API on Vercel
 
-1. Sign up at [Render](https://render.com) with GitHub.
-2. *New* → *Blueprint* → choose the **ecoledger** repository. Render reads `render.yaml` and sets up a
-   web service called `ecoledger-api`.
-3. It asks for these values:
+1. Sign up at [Vercel](https://vercel.com/signup) (*Hobby*, *Continue with GitHub*).
+2. *Add New* → *Project* → import the **ecoledger** repository.
+3. **Project Name**: `ecoledger-api`. **Framework Preset**: *Other*. **Root Directory**: `backend`.
+   The rest comes from `backend/vercel.json`.
+4. Open *Environment Variables* and add:
 
-   | Setting | Value |
+   | Name | Value |
    | --- | --- |
+   | `NODE_ENV` | `production` |
+   | `JWT_SECRET` | any long random text (e.g. 40 random letters and numbers) |
    | `MONGO_URI` | the Atlas connection string from step 2 |
    | `ADMIN_EMAIL` | the email you will use to sign in as admin |
    | `ADMIN_PASSWORD` | a strong password for the admin |
+   | `RPC_URL` | `https://ethereum-sepolia-rpc.publicnode.com` |
    | `OWNER_PRIVATE_KEY` | the same private key you deployed with in step 1 |
-   | `CONTRACT_ADDRESS` | the address printed in step 1 |
-   | `CORS_ORIGIN` | leave empty for now, filled in step 5 |
+   | `CONTRACT_ADDRESS` | the address from step 1 |
 
-   `JWT_SECRET` is generated for you and `RPC_URL` is already set to a free public Sepolia node.
-4. Click *Apply*. When the deploy finishes, open
-   `https://ecoledger-api.onrender.com/api/health` (your service URL may differ slightly). You want
+5. Click *Deploy*. When it finishes, open `https://<your-api-project>.vercel.app/api/health`. You want
    `"database": true` and `"contract": true`. If not, the `reason` field says what is missing.
+
+Notes: each request can carry at most 4.5 MB on Vercel, so proof photos are limited to 4 MB, and a
+request may run for up to 60 seconds, which covers a Sepolia mint (10 to 30 seconds).
+
+### Alternative: Render
+
+If you prefer a classic always-on server, `render.yaml` sets up the API on [Render](https://render.com)
+(*New* → *Blueprint*). Render asks new accounts to add a card, even for the free plan
+(a $1 check that is released). Use the same environment variables as above; `JWT_SECRET` is generated
+for you. Render's free plan sleeps after 15 minutes without traffic and takes up to a minute to wake up.
 
 ## 4. Put the app on Vercel
 
-1. Sign up at [Vercel](https://vercel.com) with GitHub.
-2. *Add New* → *Project* → import the **ecoledger** repository.
+1. On Vercel, *Add New* → *Project* → import the **ecoledger** repository again (a second project).
+2. **Project Name**: `ecoledger`.
 3. Set **Root Directory** to `frontend`. Vercel picks up the build settings from `frontend/vercel.json`.
 4. Under *Environment Variables* add:
 
    | Name | Value |
    | --- | --- |
-   | `EXPO_PUBLIC_API_URL` | your Render URL followed by `/api`, e.g. `https://ecoledger-api.onrender.com/api` |
+   | `EXPO_PUBLIC_API_URL` | your API link followed by `/api`, e.g. `https://ecoledger-api.vercel.app/api` |
 
 5. Click *Deploy*. After a few minutes you get your live link, e.g. `https://ecoledger.vercel.app`.
 
@@ -99,14 +106,15 @@ If you change `EXPO_PUBLIC_API_URL` later, redeploy the app on Vercel, because t
 
 ## 5. Connect them and check
 
-1. On Render, open `ecoledger-api` → *Environment*, set `CORS_ORIGIN` to your Vercel link
-   (e.g. `https://ecoledger.vercel.app`, no slash at the end) and save. This allows only your site to call the API.
+1. In the `ecoledger-api` project → *Settings* → *Environment Variables*, add `CORS_ORIGIN` = your app's link
+   (e.g. `https://ecoledger.vercel.app`, no slash at the end). Then *Deployments* → ⋯ on the latest → *Redeploy*.
+   This allows only your site to call the API.
 2. Open the Vercel link. The header should say **Chain live**.
 3. Run the automatic check from your computer against the live API:
 
    ```bash
    cd backend
-   ADMIN_EMAIL=you@example.com ADMIN_PASSWORD=your-admin-password npm run smoke -- https://ecoledger-api.onrender.com
+   ADMIN_EMAIL=you@example.com ADMIN_PASSWORD=your-admin-password npm run smoke -- https://ecoledger-api.vercel.app
    ```
 
    It creates a test student, submits an activity, approves it and confirms the mint on Sepolia.
@@ -118,15 +126,14 @@ If you change `EXPO_PUBLIC_API_URL` later, redeploy the app on Vercel, because t
 
 ## Good to know
 
-- **The first visit can be slow.** Render's free plan sleeps after 15 minutes without traffic and takes
-  up to a minute to wake up. The app shows a "server is waking up" message meanwhile. A paid plan
-  (or a free uptime pinger hitting `/api/health`) keeps it awake.
+- **The first request after a quiet spell takes a second or two** while Vercel starts the function
+  (on Render's free plan it can take up to a minute; the app shows a "waking up" message).
 - **Gas.** Each approval costs a tiny amount of Sepolia test ETH. If minting starts failing with
   "no ETH left for gas", top the wallet up from the faucet again. Approvals still count while the wallet is
   empty, and the admin can press *Retry mint* afterwards.
-- **Keep the private key secret.** It only lives in your local `.env` and in Render's environment
+- **Keep the private key secret.** It only lives in your local `.env` and in the API project's environment
   settings. It is a test wallet, but anyone with the key could mint CCT.
-- **Photos** are stored in MongoDB, so they survive Render restarts. Atlas's free 512 MB fits a few
+- **Photos** are stored in MongoDB, so they survive restarts and redeploys. Atlas's free 512 MB fits a few
   thousand phone photos.
 
 ## Troubleshooting
@@ -134,8 +141,8 @@ If you change `EXPO_PUBLIC_API_URL` later, redeploy the app on Vercel, because t
 | What you see | What to do |
 | --- | --- |
 | Health says `"database": false` | Check `MONGO_URI` (password, `/ecoledger` part) and that Atlas allows `0.0.0.0/0` |
-| `OWNER_PRIVATE_KEY is not set` | Add it on Render, then *Manual Deploy → Deploy latest commit* |
+| `OWNER_PRIVATE_KEY is not set` | Add it to the API project's environment variables, then redeploy |
 | `CONTRACT_ADDRESS is not set` or `No contract at ...` | Use the exact address from step 1, and make sure `RPC_URL` points to Sepolia |
-| `The server key is not the contract owner` | `OWNER_PRIVATE_KEY` on Render must be the key you deployed with |
+| `The server key is not the contract owner` | `OWNER_PRIVATE_KEY` on the API must be the key you deployed with |
 | App says it can't reach the server | Check `EXPO_PUBLIC_API_URL` ends in `/api`, redeploy on Vercel, and check `CORS_ORIGIN` matches the Vercel link exactly |
-| Render build fails | Render's *Logs* tab shows why; the blueprint expects Node 20 and the `backend` folder |
+| Deploy fails | The project's *Deployments* → *Build Logs* show why; check the Root Directory (`backend` or `frontend`) |
