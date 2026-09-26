@@ -52,9 +52,9 @@ export default function Wallet() {
   const hero = w ? (
     <View style={[s.hero, { padding: isTablet ? S.xxl : S.xl }]}>
       <View style={s.heroTop}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: S.sm }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: S.sm, flexShrink: 1 }}>
           <Ionicons name="wallet" size={18} color={C.blush} />
-          <Text style={s.heroLabel}>Campus Carbon Token balance</Text>
+          <Text style={[s.heroLabel, { flexShrink: 1 }]}>Campus Carbon Token balance</Text>
         </View>
         <Pill tone={chainLive ? 'green' : 'amber'} icon={chainLive ? 'radio-button-on' : 'warning'} label={chainLive ? 'Read live from chain' : 'Chain offline'} />
       </View>

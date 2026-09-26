@@ -59,23 +59,24 @@ const NAV: { label: string; href: string; icon: IconName; admin?: boolean; stude
   { label: 'Review', href: '/admin', icon: 'shield-checkmark-outline', admin: true },
 ];
 
-function StatusDot() {
+function StatusDot({ compact }: { compact?: boolean }) {
   const { health } = useSession();
   const ok = health?.server && health.database && health.chain.contract;
   const label = !health ? 'Checking…' : !health.server ? 'Server offline' : !health.database ? 'Database offline' : !health.chain.contract ? 'Chain offline' : 'Chain live';
   return (
     <View style={[st.status, { backgroundColor: ok ? C.greenTint : C.amberTint }]} accessibilityLabel={`Status: ${label}`}>
       <View style={[st.statusDot, { backgroundColor: ok ? C.green : C.amber }]} />
-      <Text style={[st.statusText, { color: ok ? C.greenDeep : C.amber }]} numberOfLines={1}>{label}</Text>
+      {compact ? null : <Text style={[st.statusText, { color: ok ? C.greenDeep : C.amber }]} numberOfLines={1}>{label}</Text>}
     </View>
   );
 }
 
 function Header() {
   const { user, signOut } = useSession();
-  const { isDesktop, gutter } = useLayout();
+  const { isDesktop, gutter, width } = useLayout();
   const router = useRouter();
   const path = usePathname();
+  const narrow = width < 360; // smallest phones: status shows as a dot only
   const [open, setOpen] = useState(false);
   const links = NAV.filter((n) => (user?.role === 'admin' ? !n.student : !n.admin));
   const active = (href: string) => (href === '/' ? path === '/' : path.startsWith(href));
@@ -83,7 +84,7 @@ function Header() {
 
   return (
     <View style={st.headerWrap}>
-      <View style={[st.header, { paddingHorizontal: gutter }]}>
+      <View style={[st.header, { paddingHorizontal: gutter }, narrow && { gap: S.sm }]}>
         <Pressable onPress={() => go(user?.role === 'admin' ? '/admin' : '/')} style={st.brand} accessibilityRole="link">
           <View style={st.logoMark}><Ionicons name="leaf" size={16} color="#fff" /></View>
           <Text style={st.brandText}>EcoLedger</Text>
@@ -100,7 +101,7 @@ function Header() {
         )}
 
         <View style={st.headerRight}>
-          <StatusDot />
+          <StatusDot compact={narrow} />
           {isDesktop ? (
             <Pressable onPress={async () => { await signOut(); router.replace('/login'); }} style={st.iconBtn} accessibilityLabel="Sign out">
               <Ionicons name="log-out-outline" size={20} color={C.green} />
@@ -116,6 +117,7 @@ function Header() {
       <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
         <Pressable style={st.scrim} onPress={() => setOpen(false)}>
           <Pressable style={st.sheet} onPress={() => {}}>
+            <ScrollView contentContainerStyle={{ gap: 4, paddingBottom: S.xl }} showsVerticalScrollIndicator={false}>
             <View style={st.sheetHead}>
               <View>
                 <Text style={st.sheetName}>{user?.name}</Text>
@@ -135,6 +137,7 @@ function Header() {
               <Ionicons name="log-out-outline" size={20} color={C.roseDeep} />
               <Text style={[st.sheetText, { color: C.roseDeep }]}>Sign out</Text>
             </Pressable>
+            </ScrollView>
           </Pressable>
         </Pressable>
       </Modal>
@@ -204,7 +207,8 @@ export function PageTitle({ title, subtitle, action }: { title: string; subtitle
 }
 
 export function Card({ children, style, padded = true }: { children: React.ReactNode; style?: ViewStyle | ViewStyle[]; padded?: boolean }) {
-  return <View style={[st.card, padded && { padding: S.xl }, style as any]}>{children}</View>;
+  const { isPhone } = useLayout();
+  return <View style={[st.card, padded && { padding: isPhone ? S.lg : S.xl }, style as any]}>{children}</View>;
 }
 
 export function SectionTitle({ children, right }: { children: React.ReactNode; right?: React.ReactNode }) {
@@ -373,8 +377,8 @@ const st = StyleSheet.create({
   statusText: { fontFamily: font, fontSize: 12, fontWeight: '700' },
 
   scrim: { flex: 1, backgroundColor: 'rgba(27,43,36,0.35)', alignItems: 'flex-end' },
-  sheet: { width: 300, maxWidth: '86%', height: '100%', backgroundColor: '#fff', padding: S.xl, gap: 4 },
-  sheetHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: S.lg, paddingBottom: S.lg, borderBottomWidth: 1, borderBottomColor: C.line },
+  sheet: { width: 300, maxWidth: '86%', height: '100%', backgroundColor: '#fff', padding: S.xl },
+  sheetHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: S.md, paddingBottom: S.md, borderBottomWidth: 1, borderBottomColor: C.line },
   sheetName: { fontFamily: font, fontSize: 17, fontWeight: '800', color: C.ink },
   sheetMail: { fontFamily: font, fontSize: 13, color: C.muted, marginTop: 2 },
   sheetLink: { flexDirection: 'row', alignItems: 'center', gap: S.md, paddingVertical: 12, paddingHorizontal: S.md, borderRadius: R.md },

@@ -25,7 +25,7 @@ const STEPS = [
 export default function SubmitActivity() {
   const router = useRouter();
   const { toast, refreshUser, refreshQueue } = useSession();
-  const { isDesktop, cols } = useLayout();
+  const { isDesktop, cols, width } = useLayout();
   const types = useLoad(() => api.activityTypes());
   const [type, setType] = useState<ActivityType | null>(null);
   const [description, setDescription] = useState('');
@@ -108,7 +108,7 @@ export default function SubmitActivity() {
                   accessibilityState={{ checked: on }}
                 >
                   <Ionicons name={(ty.icon || 'leaf-outline') as IconName} size={20} color={on ? '#fff' : C.green} />
-                  <Text style={[s.chipName, on && { color: '#fff' }]} numberOfLines={2}>{ty.name}</Text>
+                  <Text style={[s.chipName, width < 360 && { fontSize: 12.5 }, on && { color: '#fff' }]} numberOfLines={2}>{ty.name}</Text>
                   <Text style={[s.chipPts, on && { color: C.blush }]}>+{ty.points} pts</Text>
                 </Pressable>
               );
@@ -185,9 +185,9 @@ export default function SubmitActivity() {
 const s = StyleSheet.create({
   label: { fontFamily: font, fontSize: 13, fontWeight: '700', color: C.green, letterSpacing: 0.2 },
   error: { fontFamily: font, fontSize: 13, color: C.red, fontWeight: '600' },
-  chip: { flex: 1, gap: 6, padding: S.md, borderRadius: R.md, borderWidth: 1.5, borderColor: C.line, backgroundColor: '#FFFBFC' },
+  chip: { flex: 1, gap: 6, padding: S.md, paddingHorizontal: S.sm + 2, borderRadius: R.md, borderWidth: 1.5, borderColor: C.line, backgroundColor: '#FFFBFC' },
   chipOn: { backgroundColor: C.green, borderColor: C.green },
-  chipName: { fontFamily: font, fontSize: 14.5, fontWeight: '700', color: C.ink },
+  chipName: { fontFamily: font, fontSize: 14, fontWeight: '700', color: C.ink },
   chipPts: { fontFamily: font, fontSize: 13, fontWeight: '700', color: C.rose },
   drop: { height: 170, borderRadius: R.lg, borderWidth: 1.5, borderStyle: 'dashed', borderColor: C.lineStrong, alignItems: 'center', justifyContent: 'center', gap: 6, backgroundColor: '#FFFBFC' },
   preview: { borderRadius: R.lg, overflow: 'hidden', aspectRatio: 4 / 3, maxHeight: 340, backgroundColor: C.blush },
