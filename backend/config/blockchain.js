@@ -29,6 +29,18 @@ function normaliseKey(raw) {
 }
 const OWNER_PRIVATE_KEY = IS_LOCAL_RPC ? DEV_OWNER_KEY : normaliseKey(process.env.OWNER_PRIVATE_KEY);
 
+/** Describe what was pasted, without revealing it, so a wrong value is easy to spot. */
+function describeKey(raw) {
+  const k = String(raw || '').trim().replace(/^['"]|['"]$/g, '');
+  const bare = k.replace(/^0x/i, '');
+  if (!k) return 'The value is empty.';
+  if (/^[A-Z_]+\s*=/.test(k)) return 'The value starts with a variable name and "=". Paste only the key itself, not OWNER_PRIVATE_KEY=.';
+  if (k.trim().split(/\s+/).length >= 12) return 'The value is a list of words. That is the Secret Recovery Phrase, not the private key (and it should never be shared or stored anywhere).';
+  if (/^[0-9a-fA-F]{40}$/.test(bare)) return 'The value is 40 characters long, which is a wallet address, not a private key.';
+  if (!/^[0-9a-fA-F]+$/.test(bare)) return `The value is ${bare.length} characters long and contains characters other than 0-9 and a-f.`;
+  return `The value is ${bare.length} characters long; a private key has exactly 64.`;
+}
+
 // Written by `npm run deploy` / `npm run deploy:sepolia`. CONTRACT_ADDRESS overrides it.
 const DEPLOYMENT_FILE = path.join(__dirname, '..', 'deployments', `${process.env.CHAIN_NETWORK || (IS_LOCAL_RPC ? 'localhost' : 'sepolia')}.json`);
 
@@ -150,7 +162,7 @@ async function checkStatus() {
     minter = getWallet().address;
   } catch {
     out.canMint = false;
-    out.reason = 'OWNER_PRIVATE_KEY is not a valid private key: it should be 64 letters and numbers (0-9, a-f), with or without 0x in front. Copy it again from MetaMask (Account details, Show private key), paste it into Vercel with nothing else, and redeploy the API.';
+    out.reason = `OWNER_PRIVATE_KEY is not a valid private key. ${describeKey(process.env.OWNER_PRIVATE_KEY)} In MetaMask use Account details, then Show private key (64 characters of 0-9 and a-f), paste it into Vercel with nothing else, and redeploy the API.`;
     return out;
   }
   out.minter = minter;
