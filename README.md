@@ -64,6 +64,7 @@ recorded as a token mint on a public blockchain that nobody can quietly edit aft
 - An activity can only be approved once, even if two admins click at the same time
 - Every mint emits `EcoReward(student, amount, activityId)`, linking the token to its database record
 - One codebase for web, Android and iOS, laid out for phone, tablet and desktop
+- A 3D Campus Carbon Token on sign-in and home, built with Three.js: it flips like a fresh mint and lights the next ledger block (still version on native and for reduced motion)
 
 ## How it works
 
@@ -111,7 +112,7 @@ sequenceDiagram
 
 | Layer | Technology |
 | --- | --- |
-| App | Expo 54, React Native, React Native Web, Expo Router, TypeScript |
+| App | Expo 54, React Native, React Native Web, Expo Router, TypeScript, Three.js (3D token on the web) |
 | API | Node.js 20, Express 5, Mongoose 9, JWT, bcrypt, Multer |
 | Database | MongoDB (local or MongoDB Atlas); proof photos are stored in MongoDB too |
 | Blockchain | Solidity 0.8.20, OpenZeppelin ERC-20 + Ownable, Hardhat, ethers v6 |
