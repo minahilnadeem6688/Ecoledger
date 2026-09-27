@@ -11,6 +11,8 @@ import { useSession } from '@/lib/session';
 import { useLoad } from '@/lib/useLoad';
 import { ActivityRow } from '@/components/activity';
 import { Button, Card, Empty, Grid, IconName, Loading, Notice, PageTitle, Screen, SectionTitle, Stat, t, useLayout } from '@/components/ui';
+import Token3D from '@/components/Token3D';
+import { font } from '@/constants/theme';
 
 const ACTIONS: { label: string; body: string; href: string; icon: IconName }[] = [
   { label: 'Log an activity', body: 'Photo, note and location', href: '/submit-activity', icon: 'add-circle-outline' },
@@ -22,7 +24,7 @@ const ACTIONS: { label: string; body: string; href: string; icon: IconName }[] =
 export default function Home() {
   const { user, queued, health, refreshUser } = useSession();
   const router = useRouter();
-  const { isDesktop, cols } = useLayout();
+  const { isDesktop, isTablet, cols } = useLayout();
   const { data, loading, error, reload } = useLoad(async () => {
     refreshUser();
     return api.myActivities();
@@ -93,6 +95,19 @@ export default function Home() {
       ) : null}
       {error ? <Notice tone="red" icon="alert-circle">{error}</Notice> : null}
 
+      <View style={[s.hero, isTablet && s.heroWide]}>
+        <View style={{ flex: 1, minWidth: 0, gap: 6 }}>
+          <Text style={s.heroK}>Campus Carbon Tokens</Text>
+          <Text style={[s.heroNum, !isTablet && { fontSize: 44 }]}>{user?.cctTokens ?? 0} <Text style={s.heroUnit}>CCT</Text></Text>
+          <Text style={s.heroBody}>Minted on Ethereum for every eco-action an admin approves.</Text>
+          <Pressable onPress={() => router.push('/wallet')} style={({ hovered }: any) => [s.heroBtn, hovered && { backgroundColor: '#fff' }]} accessibilityRole="button">
+            <Ionicons name="wallet-outline" size={16} color={C.greenDeep} />
+            <Text style={s.heroBtnText}>Open wallet</Text>
+          </Pressable>
+        </View>
+        <View style={[s.heroArt, !isTablet && { marginRight: -S.lg }]}><Token3D size={isDesktop ? 210 : isTablet ? 180 : 132} /></View>
+      </View>
+
       <Grid cols={cols(2, 4, 4)} gap={S.lg}>
         <Stat label="Eco points to spend" value={user?.ecoPoints ?? 0} icon="sparkles" tone="rose" />
         <Stat label="CCT tokens earned" value={user?.cctTokens ?? 0} icon="cube" tone="green" />
@@ -116,6 +131,15 @@ export default function Home() {
 }
 
 const s = StyleSheet.create({
+  hero: { flexDirection: 'row', alignItems: 'center', gap: S.md, backgroundColor: C.green, borderRadius: R.xl, paddingVertical: S.xl, paddingLeft: S.xl, paddingRight: S.sm, overflow: 'hidden' },
+  heroWide: { paddingVertical: S.lg, paddingLeft: S.xxl, paddingRight: S.xl },
+  heroK: { fontFamily: font, fontSize: 12.5, fontWeight: '700', letterSpacing: 1.2, textTransform: 'uppercase', color: C.blush, opacity: 0.85 },
+  heroNum: { fontFamily: font, fontSize: 56, fontWeight: '800', letterSpacing: -1.5, color: '#fff', lineHeight: 60 },
+  heroUnit: { fontSize: 20, fontWeight: '700', letterSpacing: 0, color: C.pink },
+  heroBody: { fontFamily: font, fontSize: 14.5, lineHeight: 20, color: 'rgba(255,255,255,0.8)', maxWidth: 360 },
+  heroBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', marginTop: S.sm, paddingHorizontal: 14, paddingVertical: 9, borderRadius: R.pill, backgroundColor: C.blush },
+  heroBtnText: { fontFamily: font, fontSize: 14, fontWeight: '700', color: C.greenDeep },
+  heroArt: { flexShrink: 0 },
   action: { flexDirection: 'row', alignItems: 'center', gap: S.md, padding: S.md, borderRadius: R.md, borderWidth: 1, borderColor: C.line },
   actionIcon: { width: 40, height: 40, borderRadius: 12, backgroundColor: C.roseTint, alignItems: 'center', justifyContent: 'center' },
 });

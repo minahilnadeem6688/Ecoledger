@@ -9,6 +9,7 @@ import { C, font, R, S, shadow } from '@/constants/theme';
 import { api, API_ORIGIN, ApiError } from '@/lib/api';
 import { useSession } from '@/lib/session';
 import { Button, Field, IconName, Notice, Segmented, useLayout } from '@/components/ui';
+import Token3D from '@/components/Token3D';
 
 type Mode = 'login' | 'register';
 
@@ -68,6 +69,7 @@ export default function Login() {
 
   const intro = (
     <View style={[s.intro, !isDesktop && s.introCompact]}>
+      <View style={isDesktop ? s.tokenWide : s.tokenCompact}><Token3D size={isDesktop ? 260 : isTablet ? 200 : 168} /></View>
       <View style={s.brandRow}>
         <View style={s.logo}><Ionicons name="leaf" size={isDesktop ? 26 : 22} color="#fff" /></View>
         <Text style={[s.brand, !isDesktop && { fontSize: 30 }]}>EcoLedger</Text>
@@ -164,6 +166,8 @@ const s = StyleSheet.create({
 
   intro: { gap: S.md },
   introCompact: { alignItems: 'center' },
+  tokenWide: { marginLeft: -28, marginBottom: -8 },
+  tokenCompact: { marginBottom: -12 },
   brandRow: { flexDirection: 'row', alignItems: 'center', gap: S.md },
   logo: { width: 48, height: 48, borderRadius: 14, backgroundColor: C.green, alignItems: 'center', justifyContent: 'center' },
   brand: { fontFamily: font, fontSize: 44, fontWeight: '800', color: C.green, letterSpacing: -1.2 },
