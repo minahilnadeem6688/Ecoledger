@@ -5,14 +5,13 @@ import React, { useEffect } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { C, R, S } from '@/constants/theme';
+import { C, font, R, S } from '@/constants/theme';
 import { api } from '@/lib/api';
 import { useSession } from '@/lib/session';
 import { useLoad } from '@/lib/useLoad';
 import { ActivityRow } from '@/components/activity';
 import { Button, Card, Empty, Grid, IconName, Loading, Notice, PageTitle, Screen, SectionTitle, Stat, t, useLayout } from '@/components/ui';
 import Token3D from '@/components/Token3D';
-import { font } from '@/constants/theme';
 
 const ACTIONS: { label: string; body: string; href: string; icon: IconName }[] = [
   { label: 'Log an activity', body: 'Photo, note and location', href: '/submit-activity', icon: 'add-circle-outline' },
