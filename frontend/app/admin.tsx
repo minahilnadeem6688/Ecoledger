@@ -29,7 +29,8 @@ export default function Admin() {
   const count = (f: Filter) => (f === 'all' ? list.length : list.filter((a) => a.verificationStatus === f).length);
   const shown = filter === 'all' ? list : list.filter((a) => a.verificationStatus === filter);
   const failedMints = list.filter((a) => a.verificationStatus === 'approved' && a.mintStatus !== 'minted' && a.mintStatus !== 'pending').length;
-  const chainLive = !!health?.chain.contract;
+  const chainLive = !!health?.chain.contract && health?.chain.canMint !== false;
+  const lowGas = chainLive && health?.chain.network === 'public' && typeof health?.chain.minterEth === 'number' && health.chain.minterEth < 0.01;
 
   const replace = (a: Activity) => setData(list.map((x) => (x._id === a._id ? a : x)));
 
@@ -122,7 +123,12 @@ export default function Admin() {
 
       {!chainLive && health ? (
         <Notice tone="amber" icon="warning">
-          Blockchain unavailable: {health.chain.reason || 'unknown'} Approvals still add points, and you can retry the mint later.
+          Minting is paused: {health.chain.reason || 'the blockchain is unavailable.'} Approvals still add points, and you can retry the mint once this is fixed.
+        </Notice>
+      ) : null}
+      {lowGas && health?.chain.minter ? (
+        <Notice tone="amber" icon="flame-outline">
+          The minting wallet {health.chain.minter} is low on Sepolia ETH ({health.chain.minterEth?.toFixed(4)} left). Top it up from a faucet so approvals keep minting.
         </Notice>
       ) : null}
       {error ? <Notice tone="red" icon="alert-circle">{error}</Notice> : null}

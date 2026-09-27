@@ -57,7 +57,7 @@ export interface Activity {
   createdAt: string;
   verifiedAt?: string;
 }
-export interface ChainStatus { rpc: boolean; contract: boolean; address: string | null; chainId?: number; symbol?: string; reason?: string; network?: 'local' | 'public'; explorerUrl?: string }
+export interface ChainStatus { rpc: boolean; contract: boolean; canMint?: boolean; minter?: string; minterEth?: number; address: string | null; chainId?: number; symbol?: string; reason?: string; network?: 'local' | 'public'; explorerUrl?: string }
 export interface Health { server: boolean; database: boolean; chain: ChainStatus }
 export interface Reward { _id: string; title: string; description?: string; icon?: string; pointsRequired: number; quantity: number }
 export interface Redemption { _id: string; rewardId: Reward | null; redeemedAt: string }

@@ -61,8 +61,8 @@ const NAV: { label: string; href: string; icon: IconName; admin?: boolean; stude
 
 function StatusDot({ compact }: { compact?: boolean }) {
   const { health } = useSession();
-  const ok = health?.server && health.database && health.chain.contract;
-  const label = !health ? 'Checking…' : !health.server ? 'Server offline' : !health.database ? 'Database offline' : !health.chain.contract ? 'Chain offline' : 'Chain live';
+  const ok = health?.server && health.database && health.chain.contract && health.chain.canMint !== false;
+  const label = !health ? 'Checking…' : !health.server ? 'Server offline' : !health.database ? 'Database offline' : !health.chain.contract ? 'Chain offline' : health.chain.canMint === false ? 'Minting paused' : 'Chain live';
   return (
     <View style={[st.status, { backgroundColor: ok ? C.greenTint : C.amberTint }]} accessibilityLabel={`Status: ${label}`}>
       <View style={[st.statusDot, { backgroundColor: ok ? C.green : C.amber }]} />

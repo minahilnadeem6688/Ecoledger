@@ -129,11 +129,39 @@ async function checkStatus() {
       : `No contract at ${address} on this network. Check CONTRACT_ADDRESS and RPC_URL.`;
     return out;
   }
+  const token = new ethers.Contract(address, ABI, getProvider());
   try {
-    out.symbol = await new ethers.Contract(address, ABI, getProvider()).symbol();
+    out.symbol = await token.symbol();
     out.contract = true;
   } catch {
     out.reason = 'Contract found but it is not the EcoToken. Redeploy with "npm run deploy".';
+    return out;
+  }
+
+  // Can this server actually mint? It must hold the owner key and have ETH for gas.
+  let minter;
+  try {
+    minter = getWallet().address;
+  } catch {
+    out.canMint = false;
+    out.reason = 'OWNER_PRIVATE_KEY is not a valid private key. Copy it again from MetaMask (Account details, Show private key).';
+    return out;
+  }
+  out.minter = minter;
+  try {
+    const [owner, balance] = await Promise.all([token.owner(), getProvider().getBalance(minter)]);
+    out.minterEth = Number(ethers.formatEther(balance));
+    if (owner.toLowerCase() !== minter.toLowerCase()) {
+      out.canMint = false;
+      out.reason = `The server key belongs to ${minter}, but the contract owner is ${owner}. Set OWNER_PRIVATE_KEY on the API to the key you deployed with, then redeploy the API.`;
+    } else if (!IS_LOCAL_RPC && balance < ethers.parseEther('0.0005')) {
+      out.canMint = false;
+      out.reason = `The server wallet ${minter} has ${out.minterEth.toFixed(5)} Sepolia ETH, not enough to pay for gas. Send it test ETH from a Sepolia faucet, then press Retry mint.`;
+    } else {
+      out.canMint = true;
+    }
+  } catch {
+    out.canMint = true; // couldn't check right now; let the mint itself report any problem
   }
   return out;
 }
@@ -159,7 +187,7 @@ async function mintReward(toAddress, amount, activityId) {
   if (!isAddress(toAddress)) return { ok: false, reason: 'Student has no valid wallet address.' };
   if (!Number.isInteger(amount) || amount <= 0) return { ok: false, reason: 'Nothing to mint for 0 points.' };
   const st = await status();
-  if (!st.rpc || !st.contract) return { ok: false, reason: st.reason };
+  if (!st.rpc || !st.contract || st.canMint === false) return { ok: false, reason: st.reason };
 
   let tx;
   try {
