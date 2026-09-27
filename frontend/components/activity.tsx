@@ -30,6 +30,14 @@ export function MintLine({ a }: { a: Activity }) {
       </View>
     );
   }
+  if (a.mintStatus === 'pending') {
+    return (
+      <View style={s.mint}>
+        <Ionicons name="time-outline" size={14} color={C.muted} />
+        <Text style={[s.mintText, { color: C.muted }]}>Points added, {a.pointsEarned} CCT confirming on-chain</Text>
+      </View>
+    );
+  }
   return (
     <View style={s.mint}>
       <Ionicons name="alert-circle" size={14} color={C.amber} />

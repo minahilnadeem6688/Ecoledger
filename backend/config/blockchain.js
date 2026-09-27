@@ -60,16 +60,29 @@ function contractAddress() {
 }
 
 let provider = null;
-let signer = null;
+let wallet = null;
 function getProvider() {
   if (!provider) provider = new ethers.JsonRpcProvider(RPC_URL);
   return provider;
 }
-function getSigner() {
-  // NonceManager keeps nonces in order when several approvals mint back to back.
-  if (!signer) signer = new ethers.NonceManager(new ethers.Wallet(OWNER_PRIVATE_KEY, getProvider()));
-  return signer;
+function getWallet() {
+  if (!wallet) wallet = new ethers.Wallet(OWNER_PRIVATE_KEY, getProvider());
+  return wallet;
 }
+
+// On Vercel several copies of the API can run at once, so a nonce cached in memory goes stale and two
+// mints end up with the same nonce. Instead every mint asks the chain for the next nonce, and mints
+// from this copy of the API run one at a time.
+let queue = Promise.resolve();
+function serial(fn) {
+  const run = queue.then(fn, fn);
+  queue = run.catch(() => {});
+  return run;
+}
+
+// Wait this long for a receipt before handing back a "pending" result, so the request finishes well
+// inside the serverless time limit. The transaction keeps going on-chain and is checked again later.
+const CONFIRM_TIMEOUT_MS = Number(process.env.MINT_CONFIRM_TIMEOUT_MS) || (IS_LOCAL_RPC ? 20000 : 40000);
 
 /**
  * Health check used by /api/health and before every mint.
@@ -98,7 +111,7 @@ async function checkStatus() {
   } catch {
     out.reason = IS_LOCAL_RPC ? `Blockchain node not reachable at ${RPC_URL}. Run "npm run chain".` : 'Blockchain RPC not reachable. Check RPC_URL.';
     if (provider) provider.destroy();
-    provider = null; signer = null; // reconnect cleanly next time
+    provider = null; wallet = null; // reconnect cleanly next time
     return out;
   }
   if (!OWNER_PRIVATE_KEY) {
@@ -125,29 +138,76 @@ async function checkStatus() {
   return out;
 }
 
+/** Turn an ethers error into a sentence an admin can act on. */
+function explain(err) {
+  const msg = err?.shortMessage || err?.info?.error?.message || err?.reason || err?.message || 'Mint transaction failed.';
+  if (/Ownable|OwnableUnauthorizedAccount|not the owner/i.test(msg)) return 'The server key is not the contract owner. Deploy with the same OWNER_PRIVATE_KEY.';
+  if (/insufficient funds/i.test(msg)) return 'The server wallet has no Sepolia ETH left for gas. Top it up from a faucet, then retry.';
+  if (/nonce|replacement|already known|underpriced/i.test(msg)) return 'Another mint was using the same transaction slot. Retry in a few seconds.';
+  if (/429|rate limit|too many requests|exceeded/i.test(msg)) return 'The blockchain RPC is limiting requests. Retry in a minute, or set RPC_URL to a dedicated endpoint.';
+  if (/timeout|ETIMEDOUT|ECONNRESET|network|could not detect/i.test(msg)) return 'The blockchain RPC did not answer in time. Retry in a moment.';
+  return msg;
+}
+const isNonceClash = (err) => /nonce|replacement|already known|underpriced/i.test(err?.shortMessage || err?.message || '');
+
 /**
  * Mint CCT for one approved activity.
- * @returns {Promise<{ ok: boolean, txHash?: string, blockNumber?: number, reason?: string }>}
+ * @returns {Promise<{ ok: boolean, pending?: boolean, txHash?: string, blockNumber?: number, reason?: string }>}
+ *   ok: minted and confirmed. pending: sent, but not confirmed yet (check later with checkMint).
  */
 async function mintReward(toAddress, amount, activityId) {
   if (!isAddress(toAddress)) return { ok: false, reason: 'Student has no valid wallet address.' };
   if (!Number.isInteger(amount) || amount <= 0) return { ok: false, reason: 'Nothing to mint for 0 points.' };
   const st = await status();
   if (!st.rpc || !st.contract) return { ok: false, reason: st.reason };
+
+  let tx;
   try {
-    const contract = new ethers.Contract(st.address, ABI, getSigner());
-    const tx = await contract.reward(toAddress.trim(), amount, String(activityId));
-    const receipt = await tx.wait();
+    tx = await serial(async () => {
+      const contract = new ethers.Contract(st.address, ABI, getWallet());
+      const send = async () => {
+        const nonce = await getProvider().getTransactionCount(getWallet().address, 'pending');
+        const gas = await contract.reward.estimateGas(toAddress.trim(), amount, String(activityId));
+        return contract.reward(toAddress.trim(), amount, String(activityId), { nonce, gasLimit: (gas * 12n) / 10n });
+      };
+      // If another copy of the API took this nonce a moment ago, wait a little (with jitter so the
+      // copies don't collide again) and ask the chain for the next free one.
+      for (let attempt = 1; ; attempt++) {
+        try {
+          return await send();
+        } catch (err) {
+          if (!isNonceClash(err) || attempt >= 5) throw err;
+          await new Promise((r) => setTimeout(r, 600 * attempt + Math.random() * 900));
+        }
+      }
+    });
+  } catch (err) {
+    return { ok: false, reason: explain(err) };
+  }
+
+  try {
+    const receipt = await tx.wait(1, CONFIRM_TIMEOUT_MS);
+    if (!receipt || receipt.status !== 1) return { ok: false, txHash: tx.hash, reason: 'The mint transaction was reverted on-chain.' };
     return { ok: true, txHash: receipt.hash, blockNumber: receipt.blockNumber };
   } catch (err) {
-    signer = null; // drop cached nonce state after a failed send
-    const reason = err.shortMessage || err.reason || err.message || 'Mint transaction failed.';
-    return {
-      ok: false,
-      reason: /Ownable|owner/i.test(reason)
-        ? 'The server key is not the contract owner. Deploy with the same OWNER_PRIVATE_KEY.'
-        : /insufficient funds/i.test(reason) ? 'The server wallet has no ETH left for gas. Top it up from a testnet faucet.' : reason,
-    };
+    if (err?.code === 'TIMEOUT') return { ok: false, pending: true, txHash: tx.hash, reason: 'Sent to the network, waiting for confirmation.' };
+    return { ok: false, txHash: tx.hash, reason: explain(err) };
+  }
+}
+
+/**
+ * Look up a mint that was sent earlier but not confirmed yet.
+ * @returns {Promise<{ state: 'minted'|'failed'|'pending'|'unknown', blockNumber?: number }>}
+ */
+async function checkMint(txHash) {
+  if (!txHash) return { state: 'unknown' };
+  try {
+    const receipt = await getProvider().getTransactionReceipt(txHash);
+    if (receipt) return receipt.status === 1 ? { state: 'minted', blockNumber: receipt.blockNumber } : { state: 'failed' };
+    const tx = await getProvider().getTransaction(txHash);
+    return { state: tx ? 'pending' : 'failed' }; // a transaction the network dropped will never confirm
+  } catch {
+    return { state: 'unknown' };
   }
 }
 
@@ -169,4 +229,4 @@ function newWalletAddress() {
   return ethers.Wallet.createRandom().address;
 }
 
-module.exports = { status, mintReward, getBalance, newWalletAddress, isAddress, contractAddress };
+module.exports = { status, mintReward, checkMint, getBalance, newWalletAddress, isAddress, contractAddress };

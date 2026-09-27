@@ -16,7 +16,7 @@ const activitySchema = new mongoose.Schema({
   verifiedBy:  { type: mongoose.Schema.Types.ObjectId, ref: 'Student' },
   verifiedAt:  Date,
   // On-chain reward
-  mintStatus:  { type: String, enum: ['none', 'minted', 'failed'], default: 'none' },
+  mintStatus:  { type: String, enum: ['none', 'pending', 'minted', 'failed'], default: 'none' },
   mintTxHash:  { type: String, default: null },
   mintBlock:   { type: Number, default: null },
   mintError:   { type: String, default: null },

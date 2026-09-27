@@ -14,7 +14,7 @@ const Student = require('../models/Student');
 const Proof = require('../models/Proof');
 const upload = require('../middleware/upload');
 const { requireAuth, requireAdmin } = require('../middleware/auth');
-const { mintReward, newWalletAddress, isAddress } = require('../config/blockchain');
+const { mintReward, checkMint, newWalletAddress, isAddress } = require('../config/blockchain');
 
 const router = express.Router();
 const POPULATE = [
@@ -58,7 +58,9 @@ router.post('/', requireAuth, (req, res, next) => {
 // GET /api/activity/mine: the signed-in student's activities
 router.get('/mine', requireAuth, async (req, res) => {
   try {
-    res.json(await Activity.find({ studentId: req.user._id }).populate(POPULATE).sort({ createdAt: -1 }));
+    const mine = await Activity.find({ studentId: req.user._id }).populate(POPULATE).sort({ createdAt: -1 });
+    await settlePending(mine);
+    res.json(mine);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -69,11 +71,23 @@ router.get('/', requireAuth, requireAdmin, async (req, res) => {
   try {
     const filter = ['pending', 'approved', 'rejected'].includes(req.query.status) ? { verificationStatus: req.query.status } : {};
     const all = await Activity.find(filter).populate(POPULATE).sort({ createdAt: -1 });
+    await settlePending(all);
     res.json(all.filter((a) => a.studentId && a.activityType)); // skip orphaned test records
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
+
+async function markMinted(activity, txHash, blockNumber) {
+  // Only the request that flips the record to "minted" credits the tokens, so they are never counted twice.
+  const claimed = await Activity.findOneAndUpdate(
+    { _id: activity._id, mintStatus: { $ne: 'minted' } },
+    { mintStatus: 'minted', mintTxHash: txHash, mintBlock: blockNumber, mintError: null },
+    { new: true },
+  );
+  if (claimed) await Student.updateOne({ _id: activity.studentId }, { $inc: { cctTokens: activity.pointsEarned } });
+  Object.assign(activity, { mintStatus: 'minted', mintTxHash: txHash, mintBlock: blockNumber, mintError: null });
+}
 
 async function mintFor(activity) {
   const student = await Student.findById(activity.studentId);
@@ -84,17 +98,28 @@ async function mintFor(activity) {
   }
   const result = await mintReward(student.walletAddress, activity.pointsEarned, activity._id);
   if (result.ok) {
-    activity.mintStatus = 'minted';
-    activity.mintTxHash = result.txHash;
-    activity.mintBlock = result.blockNumber;
-    activity.mintError = null;
-    await Student.updateOne({ _id: student._id }, { $inc: { cctTokens: activity.pointsEarned } });
-  } else {
-    activity.mintStatus = 'failed';
-    activity.mintError = result.reason;
+    await markMinted(activity, result.txHash, result.blockNumber);
+    return result;
   }
+  activity.mintStatus = result.pending ? 'pending' : 'failed';
+  activity.mintTxHash = result.txHash || null;
+  activity.mintError = result.pending ? null : result.reason;
   await activity.save();
   return result;
+}
+
+/** Settle mints that were sent but not confirmed when the request ended. */
+async function settlePending(activities) {
+  const pending = activities.filter((a) => a.mintStatus === 'pending' && a.mintTxHash).slice(0, 10);
+  await Promise.all(pending.map(async (a) => {
+    const r = await checkMint(a.mintTxHash);
+    if (r.state === 'minted') await markMinted(a, a.mintTxHash, r.blockNumber);
+    else if (r.state === 'failed') {
+      a.mintStatus = 'failed';
+      a.mintError = 'The mint transaction did not go through on-chain. Retry to send it again.';
+      await a.save();
+    }
+  }));
 }
 
 // POST /api/activity/:id/verify  { status: 'approved' | 'rejected', reason? } (admin)
@@ -133,6 +158,17 @@ router.post('/:id/retry-mint', requireAuth, requireAdmin, async (req, res) => {
     const activity = await Activity.findById(req.params.id);
     if (!activity || activity.verificationStatus !== 'approved') return res.status(400).json({ error: 'Only approved activities can be minted.' });
     if (activity.mintStatus === 'minted') return res.status(409).json({ error: 'Tokens were already minted for this activity.' });
+    // A transaction that was sent earlier may have confirmed since; never send a second one while it can still land.
+    if (activity.mintTxHash) {
+      const r = await checkMint(activity.mintTxHash);
+      if (r.state === 'minted') {
+        await markMinted(activity, activity.mintTxHash, r.blockNumber);
+        return res.json({ activity: await activity.populate(POPULATE), mint: { ok: true, txHash: activity.mintTxHash, blockNumber: r.blockNumber } });
+      }
+      if (r.state === 'pending' || r.state === 'unknown') {
+        return res.json({ activity: await activity.populate(POPULATE), mint: { ok: false, pending: true, txHash: activity.mintTxHash, reason: 'Still waiting for the earlier transaction to confirm.' } });
+      }
+    }
     const mint = await mintFor(activity);
     res.json({ activity: await activity.populate(POPULATE), mint });
   } catch (error) {

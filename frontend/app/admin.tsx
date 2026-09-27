@@ -28,7 +28,7 @@ export default function Admin() {
   const list = data || [];
   const count = (f: Filter) => (f === 'all' ? list.length : list.filter((a) => a.verificationStatus === f).length);
   const shown = filter === 'all' ? list : list.filter((a) => a.verificationStatus === filter);
-  const failedMints = list.filter((a) => a.verificationStatus === 'approved' && a.mintStatus !== 'minted').length;
+  const failedMints = list.filter((a) => a.verificationStatus === 'approved' && a.mintStatus !== 'minted' && a.mintStatus !== 'pending').length;
   const chainLive = !!health?.chain.contract;
 
   const replace = (a: Activity) => setData(list.map((x) => (x._id === a._id ? a : x)));
@@ -39,6 +39,7 @@ export default function Admin() {
       const res = await api.verify(a._id, 'approved');
       replace(res.activity);
       if (res.mint?.ok) toast(`Approved. ${res.activity.pointsEarned} CCT minted in tx ${shortHash(res.mint.txHash)}.`, 'good');
+      else if (res.mint?.pending) toast(`Approved. The mint is sent and confirming on Sepolia; it will show as minted shortly.`, 'info');
       else toast(`Approved and points added, but minting failed: ${res.mint?.reason || 'unknown reason'}`, 'bad');
     } catch (e) {
       toast(e instanceof Error ? e.message : 'Could not approve.', 'bad');
@@ -71,6 +72,7 @@ export default function Admin() {
       const res = await api.retryMint(a._id);
       replace(res.activity);
       if (res.mint.ok) toast(`Minted ${res.activity.pointsEarned} CCT in tx ${shortHash(res.mint.txHash)}.`, 'good');
+      else if (res.mint.pending) toast('Still confirming on Sepolia. Check again in a minute.', 'info');
       else toast(`Mint failed again: ${res.mint.reason}`, 'bad');
     } catch (e) {
       toast(e instanceof Error ? e.message : 'Could not retry.', 'bad');
@@ -103,9 +105,10 @@ export default function Admin() {
     if (a.verificationStatus === 'approved' && a.mintStatus !== 'minted') {
       return (
         <View style={{ gap: S.sm, marginTop: S.xs }}>
-          {a.mintError ? <Text style={[t.small, { color: C.amber }]}>Last attempt: {a.mintError}</Text> : null}
+          {a.mintStatus === 'pending' ? <Text style={[t.small, { color: C.muted }]}>Mint sent, waiting for Sepolia to confirm it.</Text>
+            : a.mintError ? <Text style={[t.small, { color: C.amber }]}>Last attempt: {a.mintError}</Text> : null}
           <View style={s.btnRow}>
-            <Button small kind="secondary" icon="refresh" label="Retry mint" onPress={() => retry(a)} loading={busy === a._id} disabled={!chainLive} />
+            <Button small kind="secondary" icon="refresh" label={a.mintStatus === 'pending' ? 'Check again' : 'Retry mint'} onPress={() => retry(a)} loading={busy === a._id} disabled={!chainLive} />
           </View>
         </View>
       );

@@ -39,7 +39,7 @@ export interface User {
 }
 export interface ActivityType { _id: string; name: string; points: number; icon?: string }
 export type Status = 'pending' | 'approved' | 'rejected';
-export type MintStatus = 'none' | 'minted' | 'failed';
+export type MintStatus = 'none' | 'pending' | 'minted' | 'failed';
 export interface Activity {
   _id: string;
   studentId: { _id: string; name: string; email: string; walletAddress: string } | null;
@@ -69,7 +69,7 @@ export interface WalletInfo {
   chain: ChainStatus;
   mints: { _id: string; activityType: { name: string } | null; pointsEarned: number; mintTxHash: string; mintBlock: number; verifiedAt: string }[];
 }
-export interface MintResult { ok: boolean; txHash?: string; blockNumber?: number; reason?: string }
+export interface MintResult { ok: boolean; pending?: boolean; txHash?: string; blockNumber?: number; reason?: string }
 
 /* ─── Request helper ────────────────────────────────────────────────────── */
 

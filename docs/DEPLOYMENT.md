@@ -143,6 +143,8 @@ If you change `EXPO_PUBLIC_API_URL` later, redeploy the app on Vercel, because t
 | Health says `"database": false` | Check `MONGO_URI` (password, `/ecoledger` part) and that Atlas allows `0.0.0.0/0` |
 | `OWNER_PRIVATE_KEY is not set` | Add it to the API project's environment variables, then redeploy |
 | `CONTRACT_ADDRESS is not set` or `No contract at ...` | Use the exact address from step 1, and make sure `RPC_URL` points to Sepolia |
+| Approved but "minting failed", points went up but CCT did not | Points are credited on approval; CCT only count once the Sepolia mint confirms. The reason is shown under the activity in *Review*. Fix it (usually gas: top up the server wallet from a faucet) and press *Retry mint* |
+| Activity says "confirming on-chain" | The mint was sent but Sepolia was slow. It settles by itself the next time the list loads, or press *Check again* |
 | `The server key is not the contract owner` | `OWNER_PRIVATE_KEY` on the API must be the key you deployed with |
 | App says it can't reach the server | Check `EXPO_PUBLIC_API_URL` ends in `/api`, redeploy on Vercel, and check `CORS_ORIGIN` matches the Vercel link exactly |
 | Deploy fails | The project's *Deployments* → *Build Logs* show why; check the Root Directory (`backend` or `frontend`) |
