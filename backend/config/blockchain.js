@@ -21,7 +21,13 @@ const DEV_OWNER_KEY = '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7
 const IS_LOCAL_RPC = /^https?:\/\/(127\.0\.0\.1|localhost|0\.0\.0\.0)(:|\/|$)/.test(RPC_URL);
 // On the local chain `npm run deploy` always deploys from Hardhat account #0, so that key signs the mints
 // (even if .env holds a Sepolia key for `npm run deploy:sepolia`). On a real network it must come from the environment.
-const OWNER_PRIVATE_KEY = IS_LOCAL_RPC ? DEV_OWNER_KEY : process.env.OWNER_PRIVATE_KEY || null;
+// MetaMask shows keys without the 0x prefix, and copy-paste can add spaces or quotes; accept all of those.
+function normaliseKey(raw) {
+  if (!raw) return null;
+  const k = String(raw).trim().replace(/^['"]|['"]$/g, '').replace(/\s+/g, '');
+  return /^[0-9a-fA-F]{64}$/.test(k) ? '0x' + k : k;
+}
+const OWNER_PRIVATE_KEY = IS_LOCAL_RPC ? DEV_OWNER_KEY : normaliseKey(process.env.OWNER_PRIVATE_KEY);
 
 // Written by `npm run deploy` / `npm run deploy:sepolia`. CONTRACT_ADDRESS overrides it.
 const DEPLOYMENT_FILE = path.join(__dirname, '..', 'deployments', `${process.env.CHAIN_NETWORK || (IS_LOCAL_RPC ? 'localhost' : 'sepolia')}.json`);
@@ -144,7 +150,7 @@ async function checkStatus() {
     minter = getWallet().address;
   } catch {
     out.canMint = false;
-    out.reason = 'OWNER_PRIVATE_KEY is not a valid private key. Copy it again from MetaMask (Account details, Show private key).';
+    out.reason = 'OWNER_PRIVATE_KEY is not a valid private key: it should be 64 letters and numbers (0-9, a-f), with or without 0x in front. Copy it again from MetaMask (Account details, Show private key), paste it into Vercel with nothing else, and redeploy the API.';
     return out;
   }
   out.minter = minter;
