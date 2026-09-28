@@ -62,6 +62,7 @@ recorded as a token mint on a public blockchain that nobody can quietly edit aft
 - Points are decided by the server from the activity type, never by the app
 - Password hashing (bcrypt), JWT sessions and admin-only routes
 - An activity can only be approved once, even if two admins click at the same time
+- Safe on serverless: each mint asks the chain for the next free nonce and retries on a clash, slow blocks are confirmed later, and the health check reports a wrong minting key or low gas
 - Every mint emits `EcoReward(student, amount, activityId)`, linking the token to its database record
 - One codebase for web, Android and iOS, laid out for phone, tablet and desktop
 - A 3D Campus Carbon Token on sign-in and home and a trophy podium on the leaderboard, built with Three.js: it flips like a fresh mint and lights the next ledger block (still version on native and for reduced motion)
