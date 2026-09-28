@@ -7,7 +7,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import FlatToken from './Token3D';
+import FlatToken from './TokenFlat';
 
 const GREEN = '#337357';
 const GREEN_DEEP = '#23513D';
