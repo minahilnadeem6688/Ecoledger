@@ -89,7 +89,7 @@ export default function Trophies3D({ width, count = 3 }: { width: number; count?
 
     const camera = new THREE.PerspectiveCamera(26, 1, 0.1, 60);
     camera.position.set(0, 2.25, 5.45);
-    camera.lookAt(0, 1.0, 0);
+    camera.lookAt(0, 1.14, 0);
 
     scene.add(new THREE.HemisphereLight(0xfff3f6, 0x337357, 0.5));
     const key = new THREE.DirectionalLight(0xffffff, 1.4);

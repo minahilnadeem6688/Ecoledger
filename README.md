@@ -50,7 +50,7 @@ recorded as a token mint on a public blockchain that nobody can quietly edit aft
 - Follow each activity from *pending* to *approved* or *rejected* (with the reason)
 - Wallet with the live on-chain CCT balance and a receipt (transaction hash and block) for every mint
 - Spend eco points on rewards; minted CCT stays in the wallet
-- Leaderboard ranked by tokens earned
+- Leaderboard ranked by tokens earned, with a 3D podium of gold, silver and bronze trophies
 - Works offline: an activity submitted without a connection is saved on the device and sent later
 
 **Admins**
@@ -64,7 +64,7 @@ recorded as a token mint on a public blockchain that nobody can quietly edit aft
 - An activity can only be approved once, even if two admins click at the same time
 - Every mint emits `EcoReward(student, amount, activityId)`, linking the token to its database record
 - One codebase for web, Android and iOS, laid out for phone, tablet and desktop
-- A 3D Campus Carbon Token on sign-in and home, built with Three.js: it flips like a fresh mint and lights the next ledger block (still version on native and for reduced motion)
+- A 3D Campus Carbon Token on sign-in and home and a trophy podium on the leaderboard, built with Three.js: it flips like a fresh mint and lights the next ledger block (still version on native and for reduced motion)
 
 ## How it works
 
