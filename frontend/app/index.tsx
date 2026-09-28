@@ -133,7 +133,7 @@ const s = StyleSheet.create({
   hero: { flexDirection: 'row', alignItems: 'center', gap: S.md, backgroundColor: C.green, borderRadius: R.xl, paddingVertical: S.xl, paddingLeft: S.xl, paddingRight: S.sm, overflow: 'hidden' },
   heroWide: { paddingVertical: S.lg, paddingLeft: S.xxl, paddingRight: S.xl },
   heroK: { fontFamily: font, fontSize: 12.5, fontWeight: '700', letterSpacing: 1.2, textTransform: 'uppercase', color: C.blush, opacity: 0.85 },
-  heroNum: { fontFamily: font, fontSize: 56, fontWeight: '800', letterSpacing: -1.5, color: '#fff', lineHeight: 60 },
+  heroNum: { fontFamily: font, fontSize: 56, fontWeight: '700', letterSpacing: -1.5, color: '#fff', lineHeight: 60 },
   heroUnit: { fontSize: 20, fontWeight: '700', letterSpacing: 0, color: C.pink },
   heroBody: { fontFamily: font, fontSize: 14.5, lineHeight: 20, color: 'rgba(255,255,255,0.8)', maxWidth: 360 },
   heroBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', marginTop: S.sm, paddingHorizontal: 14, paddingVertical: 9, borderRadius: R.pill, backgroundColor: C.blush },

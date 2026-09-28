@@ -170,7 +170,7 @@ const s = StyleSheet.create({
   tokenCompact: { marginBottom: -12 },
   brandRow: { flexDirection: 'row', alignItems: 'center', gap: S.md },
   logo: { width: 48, height: 48, borderRadius: 14, backgroundColor: C.green, alignItems: 'center', justifyContent: 'center' },
-  brand: { fontFamily: font, fontSize: 44, fontWeight: '800', color: C.green, letterSpacing: -1.2 },
+  brand: { fontFamily: font, fontSize: 44, fontWeight: '700', color: C.green, letterSpacing: -1.2 },
   tagline: { fontFamily: font, fontSize: 22, fontWeight: '700', color: C.roseDeep, letterSpacing: -0.2 },
   lead: { fontFamily: font, fontSize: 17, lineHeight: 26, color: C.text, maxWidth: 480, marginTop: S.sm },
   point: { flexDirection: 'row', gap: S.md, alignItems: 'flex-start', maxWidth: 440 },
@@ -179,7 +179,7 @@ const s = StyleSheet.create({
   pointBody: { fontFamily: font, fontSize: 14.5, lineHeight: 21, color: C.text, marginTop: 2 },
 
   card: { backgroundColor: '#fff', borderRadius: R.xl, gap: S.xl, ...shadow },
-  formTitle: { fontFamily: font, fontSize: 24, fontWeight: '800', color: C.ink, letterSpacing: -0.4 },
+  formTitle: { fontFamily: font, fontSize: 24, fontWeight: '700', color: C.ink, letterSpacing: -0.4 },
   formSub: { fontFamily: font, fontSize: 14.5, color: C.muted, lineHeight: 20 },
   switch: { fontFamily: font, fontSize: 14, color: C.muted },
 });

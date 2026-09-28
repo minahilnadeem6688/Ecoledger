@@ -120,7 +120,7 @@ const s = StyleSheet.create({
   top: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   icon: { width: 46, height: 46, borderRadius: 14, backgroundColor: C.roseTint, alignItems: 'center', justifyContent: 'center' },
   costRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' },
-  cost: { fontFamily: font, fontSize: 20, fontWeight: '800', color: C.green },
+  cost: { fontFamily: font, fontSize: 20, fontWeight: '700', color: C.green },
   bar: { height: 6, borderRadius: 3, backgroundColor: C.roseTint, overflow: 'hidden' },
   barFill: { height: '100%', backgroundColor: C.rose, borderRadius: 3 },
   redeemRow: { flexDirection: 'row', alignItems: 'center', gap: S.md, paddingVertical: S.md, borderBottomWidth: 1, borderBottomColor: C.line },

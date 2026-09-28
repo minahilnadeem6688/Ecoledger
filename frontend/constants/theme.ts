@@ -28,23 +28,23 @@ export const C = {
   redTint: '#FCE3DC',
 };
 
-export const R = { sm: 8, md: 12, lg: 18, xl: 24, pill: 999 };
+export const R = { sm: 10, md: 14, lg: 20, xl: 26, pill: 999 };
 
 export const S = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32, xxxl: 48 };
 
 export const font = Platform.select({
-  web: "Inter, 'Segoe UI', system-ui, -apple-system, Roboto, Helvetica, Arial, sans-serif",
+  web: "Geist, Inter, 'Segoe UI', system-ui, -apple-system, Roboto, Helvetica, Arial, sans-serif",
   default: undefined,
 });
 
 export const mono = Platform.select({
-  web: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+  web: "'Geist Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
   ios: 'Menlo',
   default: 'monospace',
 });
 
 export const shadow: any = Platform.select({
-  web: { boxShadow: '0 1px 2px rgba(51,115,87,0.06), 0 10px 28px -14px rgba(51,115,87,0.22)' },
+  web: { boxShadow: '0 1px 2px rgba(27,43,36,0.04), 0 12px 32px -18px rgba(51,115,87,0.28)' },
   default: {
     shadowColor: '#337357',
     shadowOpacity: 0.12,
@@ -56,3 +56,6 @@ export const shadow: any = Platform.select({
 
 /** Breakpoints used by useLayout() */
 export const BP = { tablet: 700, desktop: 1024 };
+
+/** Figures that line up in columns (balances, ranks, counts). */
+export const nums: any = Platform.select({ web: { fontVariant: ['tabular-nums'] }, default: { fontVariant: ['tabular-nums'] } });

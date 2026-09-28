@@ -194,5 +194,5 @@ const s = StyleSheet.create({
   previewImg: { width: '100%', height: '100%' },
   remove: { position: 'absolute', top: 10, right: 10, width: 34, height: 34, borderRadius: 17, backgroundColor: 'rgba(27,43,36,0.6)', alignItems: 'center', justifyContent: 'center' },
   stepNum: { width: 26, height: 26, borderRadius: 13, backgroundColor: C.green, alignItems: 'center', justifyContent: 'center' },
-  stepNumText: { fontFamily: font, fontSize: 13, fontWeight: '800', color: '#fff' },
+  stepNumText: { fontFamily: font, fontSize: 13, fontWeight: '700', color: '#fff' },
 });
